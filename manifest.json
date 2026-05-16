@@ -1,0 +1,32 @@
+{
+  "name": "Neon Strike",
+  "short_name": "NeonStrike",
+  "description": "Arcade vertical shooter — twin-thumb mobile controls, six weapon tiers, adaptive synth soundtrack.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#03060d",
+  "theme_color": "#00f0ff",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
