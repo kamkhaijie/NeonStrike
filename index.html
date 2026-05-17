@@ -82,6 +82,68 @@
     0%, 100% { filter: brightness(1); }
     50% { filter: brightness(1.6); }
   }
+  #pause-btn {
+    position: fixed; top: 14px; right: 14px;
+    width: 32px; height: 32px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(0,240,255,0.4);
+    border-radius: 50%;
+    color: var(--neon-cyan);
+    font-size: 12px; font-weight: bold;
+    cursor: pointer;
+    z-index: 11;
+    text-shadow: 0 0 6px var(--neon-cyan);
+    display: none;
+    align-items: center; justify-content: center;
+    font-family: inherit;
+  }
+  #pause-btn.visible { display: flex; }
+  #high-score-display {
+    color: var(--neon-yellow);
+    font-size: 11px; letter-spacing: 3px;
+    text-shadow: 0 0 6px var(--neon-yellow);
+    margin-top: -16px; margin-bottom: 16px;
+    opacity: 0.85;
+  }
+  .new-record {
+    color: var(--neon-yellow);
+    text-shadow: 0 0 10px var(--neon-yellow);
+    letter-spacing: 4px;
+    font-size: 12px; font-weight: bold;
+    margin-top: 14px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .stats-panel {
+    margin-top: 18px;
+    padding: 12px 18px;
+    border: 1px solid rgba(0,240,255,0.3);
+    background: rgba(0,240,255,0.05);
+    width: 88%;
+    max-width: 280px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.7;
+  }
+  .stats-panel .stats-title {
+    color: var(--neon-cyan);
+    text-shadow: 0 0 6px var(--neon-cyan);
+    font-size: 9px; letter-spacing: 3px;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .stats-row {
+    display: flex; justify-content: space-between;
+    padding: 1px 0;
+  }
+  .stats-row .label { opacity: 0.65; }
+  .stats-row .value { color: var(--neon-cyan); font-weight: bold; }
+  .stats-row.accuracy .value { color: var(--neon-yellow); }
+  .stats-divider {
+    height: 1px;
+    background: rgba(0,240,255,0.15);
+    margin: 6px 0;
+  }
   .audio-toggles {
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 8px;
@@ -93,10 +155,11 @@
     border: 1px solid rgba(0,240,255,0.4);
     border-radius: 50%;
     color: var(--neon-cyan);
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     text-shadow: 0 0 6px var(--neon-cyan);
     display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
   }
   .audio-toggles button.off { opacity: 0.35; }
   .overlay {
@@ -224,7 +287,9 @@
 <div class="audio-toggles hidden" id="audio-toggles">
   <button id="sfx-toggle" title="Sound FX">♪</button>
   <button id="bgm-toggle" title="Music">♫</button>
+  <button id="hap-toggle" title="Haptic">▒</button>
 </div>
+<button id="pause-btn" title="Pause">II</button>
 
 <div id="left-zone" class="control-zone"></div>
 <div id="right-zone" class="control-zone"></div>
@@ -235,6 +300,7 @@
 <div id="start-screen" class="overlay">
   <h1>NEON STRIKE</h1>
   <div class="sub">SECTOR 7 // ENGAGE</div>
+  <div id="high-score-display">HIGH 000000</div>
   <button id="start-btn">START</button>
   <div class="hint">
     LEFT THUMB · MOVE<br>
@@ -244,7 +310,8 @@
     <span class="pu">P</span> POWER UP · <span class="life">1UP</span> EXTRA SHIP<br>
     BONUS SHIP EVERY 10,000 PTS · BOSS EVERY 5 WAVES<br>
     TIER 6 · <span class="burst">RADIAL BURST</span> CLEARS BULLETS<br>
-    ♪ SFX · ♫ MUSIC (TOP CENTER)
+    MAX TIER POWERUPS · <span style="color:#88ddff">WINGMEN JOIN</span> (UP TO 6)<br>
+    ♪ SFX · ♫ MUSIC · ▒ HAPTIC (TOP CENTER)
   </div>
 </div>
 
@@ -253,7 +320,30 @@
   <div class="sub">PILOT TERMINATED</div>
   <div class="stat">SCORE · <span id="final-score">0</span></div>
   <div class="stat">WAVE · <span id="final-wave">0</span></div>
+  <div id="new-record" class="new-record hidden">★ NEW HIGH SCORE ★</div>
+  <div class="stats-panel" id="stats-panel">
+    <div class="stats-title">MISSION REPORT</div>
+    <div class="stats-row"><span class="label">Shots fired</span><span class="value" id="stat-fired">0</span></div>
+    <div class="stats-row"><span class="label">Shots hit</span><span class="value" id="stat-hit">0</span></div>
+    <div class="stats-row accuracy"><span class="label">Accuracy</span><span class="value" id="stat-acc">0%</span></div>
+    <div class="stats-divider"></div>
+    <div class="stats-row"><span class="label">Grunts</span><span class="value" id="kill-grunt">0</span></div>
+    <div class="stats-row"><span class="label">Weavers</span><span class="value" id="kill-weaver">0</span></div>
+    <div class="stats-row"><span class="label">Kamikazes</span><span class="value" id="kill-kamikaze">0</span></div>
+    <div class="stats-row"><span class="label">Tanks</span><span class="value" id="kill-tank">0</span></div>
+    <div class="stats-row"><span class="label">Snipers</span><span class="value" id="kill-sniper">0</span></div>
+    <div class="stats-row"><span class="label">Bosses</span><span class="value" id="kill-boss">0</span></div>
+    <div class="stats-divider"></div>
+    <div class="stats-row"><span class="label">Total kills</span><span class="value" id="stat-total">0</span></div>
+  </div>
   <button id="restart-btn">RETRY</button>
+</div>
+
+<div id="pause-screen" class="overlay hidden">
+  <h1>PAUSED</h1>
+  <div class="sub">MISSION SUSPENDED</div>
+  <button id="resume-btn">RESUME</button>
+  <div class="hint">TAP RESUME TO CONTINUE</div>
 </div>
 
 <script>
@@ -282,8 +372,44 @@
   let audioCtx = null;
   let sfxOn = true;
   let bgmOn = true;
+  let hapticOn = true;
   let sfxGain = null;
   let bgmGain = null;
+
+  // ============ HAPTIC FEEDBACK ============
+  // navigator.vibrate works on most Android. iOS Safari ignores it silently.
+  function buzz(pattern) {
+    if (!hapticOn) return;
+    if (navigator.vibrate) {
+      try { navigator.vibrate(pattern); } catch (e) {}
+    }
+  }
+  const HAPTIC = {
+    hit: () => buzz(40),         // short pulse when player gets hit
+    enemy: () => buzz(15),       // tiny tick when enemy destroyed
+    bigEnemy: () => buzz(35),    // tank/sniper kill
+    boss: () => buzz([60, 40, 80]),  // boss kill: pattern
+    death: () => buzz([100, 50, 200]), // game over
+    powerup: () => buzz(25),
+    life: () => buzz([20, 30, 20]),
+    burst: () => buzz([80, 30, 50])
+  };
+
+  // ============ HIGH SCORE PERSISTENCE ============
+  const HIGH_SCORE_KEY = 'neonStrike_highScore';
+  function getHighScore() {
+    try {
+      const v = localStorage.getItem(HIGH_SCORE_KEY);
+      return v ? parseInt(v, 10) || 0 : 0;
+    } catch (e) { return 0; }
+  }
+  function setHighScore(score) {
+    try { localStorage.setItem(HIGH_SCORE_KEY, String(score)); } catch (e) {}
+  }
+  function refreshHighScoreDisplay() {
+    document.getElementById('high-score-display').textContent =
+      'HIGH ' + String(getHighScore()).padStart(6, '0');
+  }
 
   function initAudio() {
     if (audioCtx) return;
@@ -645,13 +771,29 @@
   }
 
   // ============ GAME STATE ============
-  const STATE = { START: 0, PLAY: 1, OVER: 2 };
+  const STATE = { START: 0, PLAY: 1, OVER: 2, PAUSED: 3 };
   let state = STATE.START;
   let score = 0, lives = 3, wave = 1;
   let time = 0, lastSpawn = 0, waveTimer = 0;
   let powerLevel = 1;
+  let highestPowerLevel = 1; // tracks highest tier reached this run, for death-drop floor
   let lastBonusScore = 0;
   let player, bullets, enemies, eBullets, particles, stars, powerups;
+  let wingmen; // allied ships earned by collecting power-ups at max tier
+  const MAX_WINGMEN = 6;
+  // Formation slot offsets (dx, dy) relative to player.
+  // Two forward-pointing triangles flanking the player.
+  // Left triangle:  W1 (inner base), W3 (forward apex), W5 (outer base)
+  // Right triangle: W2 (inner base), W4 (forward apex), W6 (outer base)
+  // Apex is forward (-y); bases sit along the player's altitude.
+  const WINGMAN_SLOTS = [
+    { dx: -26, dy:  -6 },  // W1 — inner base, left flank
+    { dx:  26, dy:  -6 },  // W2 — inner base, right flank
+    { dx: -44, dy: -18 },  // W3 — forward apex, left triangle
+    { dx:  44, dy: -18 },  // W4 — forward apex, right triangle
+    { dx: -60, dy:  -6 },  // W5 — outer base, left triangle
+    { dx:  60, dy:  -6 }   // W6 — outer base, right triangle
+  ];
   let shake = 0;
   let bossActive = false;
   let floatTexts = [];
@@ -660,13 +802,30 @@
   const CHARGE_MAX = 60;
   let chargeReadyAnnounced = false;
 
+  // ============ STATS TRACKING ============
+  // bulletsFired: how many player projectiles spawned (any source counts)
+  // bulletsHit:   how many actually connected with an enemy
+  //   Note: piercing bullets that hit multiple enemies count each hit.
+  // kills: per-type counter
+  let stats = null;
+  function newStats() {
+    return {
+      bulletsFired: 0,
+      bulletsHit: 0,
+      kills: { grunt: 0, weaver: 0, kamikaze: 0, tank: 0, sniper: 0, boss: 0 }
+    };
+  }
+
   function reset() {
     score = 0; lives = 3; wave = 1; time = 0;
     lastSpawn = 0; waveTimer = 0; powerLevel = 1;
+    highestPowerLevel = 1;
     lastBonusScore = 0; bossActive = false;
     chargeMeter = 0; chargeReadyAnnounced = false;
+    stats = newStats();
     player = { x: VW / 2, y: VH - 100, w: 28, h: 32, speed: 4.2, cooldown: 0, invuln: 60, thruster: 0 };
     bullets = []; enemies = []; eBullets = []; particles = []; powerups = []; floatTexts = []; burstWaves = [];
+    wingmen = [];
     initStars();
     updateHUD();
   }
@@ -684,7 +843,7 @@
       enemies.push({ type: 'grunt', x: 30 + Math.random() * (VW - 60), y: -30, w: 22, h: 22, hp: 1, maxHp: 1, vy: 1.6 + wave * 0.1, vx: 0, fireT: 60 + Math.random() * 60, color: '#ff007a', score: 100 });
     } else if (t === 'weaver') {
       const side = Math.random() < 0.5 ? -1 : 1;
-      enemies.push({ type: 'weaver', x: side < 0 ? -20 : VW + 20, y: 40 + Math.random() * 80, w: 24, h: 22, hp: 2, maxHp: 2, vy: 0.4, vx: side * 2.5, fireT: 90, wave: Math.random() * Math.PI * 2, color: '#ffe600', score: 200 });
+      enemies.push({ type: 'weaver', x: side < 0 ? -20 : VW + 20, y: 40 + Math.random() * 80, w: 24, h: 22, hp: 2, maxHp: 2, vy: 0.4, vx: side * 2.5, fireT: 90, phase: Math.random() * Math.PI * 2, color: '#ffe600', score: 200 });
     } else if (t === 'tank') {
       const hp = 6 + Math.floor(wave / 2);
       enemies.push({ type: 'tank', x: 50 + Math.random() * (VW - 100), y: -50, w: 36, h: 38, hp, maxHp: hp, vy: 0.9, vx: 0, fireT: 90, color: '#00f0ff', score: 500 });
@@ -725,8 +884,27 @@
     return 'tank';
   }
 
+  function spawnWingman() {
+    // Each wingman occupies a fixed formation slot, oldest first.
+    const slot = wingmen.length; // 0..3
+    if (slot >= MAX_WINGMEN) return;
+    const offset = WINGMAN_SLOTS[slot];
+    wingmen.push({
+      x: player.x + offset.dx,
+      y: player.y + offset.dy,
+      slot,
+      hp: 3,
+      maxHp: 3,
+      hitFlash: 0,           // brief white flash when struck
+      cooldown: Math.floor(Math.random() * 12),
+      thruster: 0.5,
+      spawnAnim: 30
+    });
+  }
+
   function fireBullet(x, y, vx, vy, color, dmg = 1) {
-    bullets.push({ x, y, vx, vy, color, dmg, life: 120 });
+    bullets.push({ x, y, vx, vy, color, dmg, life: 120, hit: false });
+    if (stats) stats.bulletsFired++;
   }
   function fireEBullet(x, y, vx, vy, color) {
     eBullets.push({ x, y, vx, vy, life: 200, color: color || '#ffaa00' });
@@ -748,6 +926,7 @@
 
   function triggerBurst() {
     SFX.burst();
+    HAPTIC.burst();
     shake = Math.min(shake + 12, 18);
     burstWaves.push({ x: player.x, y: player.y, r: 10, maxR: 320, life: 1, color: '#ff8800' });
     burstWaves.push({ x: player.x, y: player.y, r: 5, maxR: 280, life: 1, color: '#ffe600' });
@@ -764,14 +943,18 @@
       const d = Math.hypot(e.x - player.x, e.y - player.y);
       if (d < 180) {
         const dmg = Math.max(2, Math.floor(8 - d / 30));
+        const dmgApplied = Math.min(dmg, Math.max(0, e.hp));
         e.hp -= dmg;
+        if (e.type === 'boss' && dmgApplied > 0) score += dmgApplied;
         explode(e.x, e.y, e.color, false);
         if (e.hp <= 0) {
           score += e.score;
+          if (stats && stats.kills[e.type] !== undefined) stats.kills[e.type]++;
           checkBonusLife();
           explode(e.x, e.y, e.color, true);
           if (e.type === 'boss') {
             SFX.bigExplode();
+            HAPTIC.boss();
             bossActive = false;
             setBgmMode('combat');
             powerups.push({ type: 'power', x: e.x - 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
@@ -853,7 +1036,6 @@
   function update() {
     time++;
     if (state !== STATE.PLAY) return;
-
     const { mx, my, fire } = readInput();
 
     player.x += mx * player.speed;
@@ -865,6 +1047,35 @@
     if (player.cooldown > 0) player.cooldown--;
 
     if (fire) playerFire();
+
+    // Update wingmen: follow player with slight lag, fire autonomously
+    for (let i = wingmen.length - 1; i >= 0; i--) {
+      const w = wingmen[i];
+      // Target position is player + formation slot offset
+      const slot = WINGMAN_SLOTS[w.slot];
+      const tx = player.x + slot.dx;
+      const ty = player.y + slot.dy;
+      // Lag/lerp toward target (gives a satisfying trailing feel)
+      w.x += (tx - w.x) * 0.18;
+      w.y += (ty - w.y) * 0.18;
+      // Keep on-screen even if formation slot pushes off
+      w.x = Math.max(10, Math.min(VW - 10, w.x));
+      w.y = Math.max(20, Math.min(VH - 10, w.y));
+      // Thruster anim
+      w.thruster = (Math.abs(tx - w.x) > 0.5 || Math.abs(ty - w.y) > 0.5)
+        ? Math.min(w.thruster + 0.2, 1) : Math.max(w.thruster - 0.1, 0.4);
+      if (w.spawnAnim > 0) w.spawnAnim--;
+      if (w.hitFlash > 0) w.hitFlash--;
+      if (w.cooldown > 0) w.cooldown--;
+      // Fire autonomously: tier-3 spread, slower cadence than player
+      if (w.cooldown <= 0) {
+        w.cooldown = 10; // slower than player's 3-6 frame cooldown
+        const wc = '#88ff88'; // light green allied fire — clearly distinct from player cyan
+        fireBullet(w.x, w.y - 10, 0, -8.5, wc);
+        fireBullet(w.x - 6, w.y - 8, -0.7, -8, wc);
+        fireBullet(w.x + 6, w.y - 8, 0.7, -8, wc);
+      }
+    }
 
     for (const s of stars) {
       s.y += s.v;
@@ -892,10 +1103,15 @@
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       if (e.type === 'weaver') {
-        e.wave += 0.04;
-        e.y += e.vy + Math.sin(e.wave) * 0.6;
+        e.phase += 0.04;
+        e.y += e.vy + Math.sin(e.phase) * 0.6;
         e.x += e.vx;
-        if (e.x < 20 || e.x > VW - 20) e.vx *= -1;
+        // Bounce off side walls — but only when actually onscreen,
+        // otherwise a weaver spawning at x=-20 would immediately
+        // reflect back off-screen and be despawned.
+        if ((e.vx < 0 && e.x < 20) || (e.vx > 0 && e.x > VW - 20)) {
+          e.vx *= -1;
+        }
       } else if (e.type === 'sniper') {
         if (e.y < e.stopY) e.y += e.vy;
         else e.y += 0.2;
@@ -967,15 +1183,22 @@
       for (let j = enemies.length - 1; j >= 0; j--) {
         const e = enemies[j];
         if (Math.abs(b.x - e.x) < e.w / 2 && Math.abs(b.y - e.y) < e.h / 2) {
+          // For score: only count damage actually applied (cap at remaining HP).
+          const dmgApplied = Math.min(b.dmg, Math.max(0, e.hp));
           e.hp -= b.dmg;
           hit = true;
+          if (stats) stats.bulletsHit++;
+          // +1 score per HP of damage dealt to bosses
+          if (e.type === 'boss' && dmgApplied > 0) score += dmgApplied;
           explode(b.x, b.y, e.color, false);
           if (e.hp <= 0) {
             score += e.score;
+            if (stats && stats.kills[e.type] !== undefined) stats.kills[e.type]++;
             checkBonusLife();
             explode(e.x, e.y, e.color, true);
             if (e.type === 'boss') {
               SFX.bigExplode();
+              HAPTIC.boss();
               bossActive = false;
               setBgmMode('combat');
               floatText(e.x, e.y, '+' + e.score, '#ffe600');
@@ -983,10 +1206,15 @@
               powerups.push({ type: 'life', x: e.x + 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
             } else {
               SFX.explode();
+              // Bigger haptic for tougher enemies
+              if (e.type === 'tank' || e.type === 'sniper') HAPTIC.bigEnemy();
+              else HAPTIC.enemy();
               const r = Math.random();
               if (r < 0.02) {
                 powerups.push({ type: 'life', x: e.x, y: e.y, vy: 1.2, w: 16, h: 16, t: 0 });
-              } else if (r < 0.14 && powerLevel < 6) {
+              } else if (r < 0.14) {
+                // P drops at the same rate regardless of tier — at tier 6
+                // they recruit wingmen instead of leveling up.
                 powerups.push({ type: 'power', x: e.x, y: e.y, vy: 1.2, w: 16, h: 16, t: 0 });
               }
             }
@@ -1015,9 +1243,63 @@
             e.hp = 0;
             explode(e.x, e.y, e.color, true);
             SFX.explode();
+            if (stats && stats.kills.kamikaze !== undefined) stats.kills.kamikaze++;
             enemies.splice(enemies.indexOf(e), 1);
           }
           break;
+        }
+      }
+    }
+
+    // Wingman collisions — 3 HP each, no invulnerability between hits
+    for (let wi = wingmen.length - 1; wi >= 0; wi--) {
+      const w = wingmen[wi];
+      let damaged = false;
+      // Enemy bullets
+      for (let bi = eBullets.length - 1; bi >= 0; bi--) {
+        const b = eBullets[bi];
+        if (Math.abs(b.x - w.x) < 9 && Math.abs(b.y - w.y) < 10) {
+          eBullets.splice(bi, 1);
+          w.hp--;
+          damaged = true;
+          break;
+        }
+      }
+      // Enemy contact — full damage, kamikaze still self-destructs
+      if (!damaged) {
+        for (const e of enemies) {
+          if (Math.abs(e.x - w.x) < (e.w / 2 + 7) && Math.abs(e.y - w.y) < (e.h / 2 + 8)) {
+            w.hp--;
+            damaged = true;
+            if (e.type === 'kamikaze') {
+              e.hp = 0;
+              explode(e.x, e.y, e.color, true);
+              SFX.explode();
+              if (stats && stats.kills.kamikaze !== undefined) stats.kills.kamikaze++;
+              enemies.splice(enemies.indexOf(e), 1);
+            } else {
+              // Non-kamikaze contact also kills the wingman immediately to
+              // prevent them getting stuck on a tank — overrides the per-hit damage
+              w.hp = 0;
+            }
+            break;
+          }
+        }
+      }
+      if (damaged) {
+        if (w.hp <= 0) {
+          explode(w.x, w.y, '#88ddff', true);
+          SFX.explode();
+          HAPTIC.enemy();
+          floatText(w.x, w.y - 8, 'WINGMAN DOWN', '#88ddff');
+          wingmen.splice(wi, 1);
+          // Reassign slots so remaining wingmen rebalance into closer slots
+          for (let k = 0; k < wingmen.length; k++) wingmen[k].slot = k;
+        } else {
+          // Non-fatal hit — flash, spark, tiny haptic
+          w.hitFlash = 8;
+          explode(w.x, w.y, '#88ddff', false);
+          HAPTIC.enemy();
         }
       }
     }
@@ -1029,14 +1311,54 @@
         if (p.type === 'life') {
           lives++;
           SFX.extraLife();
+          HAPTIC.life();
           floatText(p.x, p.y - 10, '1UP', '#00ff88');
           score += 100;
         } else {
-          if (powerLevel < 6) powerLevel++;
-          else score += 500;
-          SFX.powerup();
-          floatText(p.x, p.y - 10, powerLevel === 6 ? 'MAX!' : 'POWER UP', '#ffe600');
-          score += 50;
+          if (powerLevel < 6) {
+            powerLevel++;
+            if (powerLevel > highestPowerLevel) highestPowerLevel = powerLevel;
+            SFX.powerup();
+            HAPTIC.powerup();
+            floatText(p.x, p.y - 10, powerLevel === 6 ? 'MAX!' : 'POWER UP', '#ffe600');
+            score += 50;
+          } else if (wingmen.length < MAX_WINGMEN) {
+            // At max tier: spawn a wingman in the next formation slot
+            spawnWingman();
+            SFX.powerup();
+            HAPTIC.powerup();
+            floatText(p.x, p.y - 10, 'WINGMAN!', '#00ff88');
+            score += 200;
+          } else {
+            // Max tier + 6 wingmen: heal the most-damaged wingman, if any
+            let target = null;
+            let lowestHp = 999;
+            for (const w of wingmen) {
+              if (w.hp < w.maxHp && w.hp < lowestHp) {
+                lowestHp = w.hp;
+                target = w;
+              }
+            }
+            if (target) {
+              target.hp++;
+              SFX.powerup();
+              HAPTIC.powerup();
+              // Green heal spark — particle burst at the wingman
+              for (let k = 0; k < 8; k++) {
+                const a = Math.random() * Math.PI * 2;
+                const sp = Math.random() * 1.5 + 0.5;
+                particles.push({ x: target.x, y: target.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 25, max: 30, color: '#00ff88', size: 2 });
+              }
+              floatText(target.x, target.y - 14, '+HP', '#00ff88');
+              score += 100;
+            } else {
+              // Truly maxed: overflow to score
+              score += 500;
+              SFX.powerup();
+              HAPTIC.powerup();
+              floatText(p.x, p.y - 10, '+500', '#ffe600');
+            }
+          }
         }
         powerups.splice(i, 1);
         updateHUD();
@@ -1088,6 +1410,7 @@
     if (Math.floor(score / threshold) > Math.floor(lastBonusScore / threshold)) {
       lives++;
       SFX.extraLife();
+      HAPTIC.life();
       floatText(player.x, player.y - 30, 'BONUS SHIP!', '#00ff88');
       updateHUD();
     }
@@ -1097,29 +1420,66 @@
   function hitPlayer() {
     lives--;
     SFX.hit();
+    HAPTIC.hit();
     explode(player.x, player.y, '#00f0ff', true);
     player.invuln = 120;
     if (powerLevel === 6) { chargeMeter = 0; chargeReadyAnnounced = false; }
-    powerLevel = Math.max(1, powerLevel - 1);
+    // Tier drop on death, but with a floor: never below max(1, highest reached - 2).
+    // This caps the death-spiral — once you've held tier 6, you can't fall below 4.
+    const floor = Math.max(1, highestPowerLevel - 2);
+    powerLevel = Math.max(floor, powerLevel - 1);
     updateHUD();
     if (lives <= 0) {
       explode(player.x, player.y, '#ff007a', true);
       SFX.gameOver();
+      HAPTIC.death();
       stopBgm();
       state = STATE.OVER;
-      document.getElementById('final-score').textContent = score;
-      document.getElementById('final-wave').textContent = wave;
+      finalizeGame();
       document.getElementById('gameover-screen').classList.remove('hidden');
       document.getElementById('hud').classList.add('hidden');
       document.getElementById('power-display').classList.add('hidden');
       document.getElementById('charge-display').classList.remove('visible');
       document.getElementById('audio-toggles').classList.add('hidden');
+      document.getElementById('pause-btn').classList.remove('visible');
+    }
+  }
+
+  // Populate stats panel and check for new high score
+  function finalizeGame() {
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('final-wave').textContent = wave;
+    const fired = stats.bulletsFired;
+    const hit = stats.bulletsHit;
+    const acc = fired > 0 ? Math.round((hit / fired) * 100) : 0;
+    document.getElementById('stat-fired').textContent = fired;
+    document.getElementById('stat-hit').textContent = hit;
+    document.getElementById('stat-acc').textContent = acc + '%';
+    const k = stats.kills;
+    document.getElementById('kill-grunt').textContent = k.grunt;
+    document.getElementById('kill-weaver').textContent = k.weaver;
+    document.getElementById('kill-kamikaze').textContent = k.kamikaze;
+    document.getElementById('kill-tank').textContent = k.tank;
+    document.getElementById('kill-sniper').textContent = k.sniper;
+    document.getElementById('kill-boss').textContent = k.boss;
+    const total = k.grunt + k.weaver + k.kamikaze + k.tank + k.sniper + k.boss;
+    document.getElementById('stat-total').textContent = total;
+    // High score
+    const prev = getHighScore();
+    if (score > prev) {
+      setHighScore(score);
+      document.getElementById('new-record').classList.remove('hidden');
+    } else {
+      document.getElementById('new-record').classList.add('hidden');
     }
   }
 
   function updateHUD() {
     document.getElementById('score').textContent = score.toString().padStart(6, '0');
-    document.getElementById('lives').textContent = '▲'.repeat(Math.max(0, Math.min(lives, 9)));
+    // Lives display: full triangle wall up to 9, then a compact "▲ ×N" badge
+    const l = Math.max(0, lives);
+    document.getElementById('lives').textContent =
+      l <= 9 ? '▲'.repeat(l) : '▲ ×' + l;
     const filled = '●'.repeat(powerLevel);
     const empty = '○'.repeat(6 - powerLevel);
     document.getElementById('power-display').textContent = 'PWR ' + filled + empty;
@@ -1156,8 +1516,9 @@
     }
     ctx.globalAlpha = 1;
 
-    if (state === STATE.PLAY || state === STATE.OVER) {
+    if (state === STATE.PLAY || state === STATE.OVER || state === STATE.PAUSED) {
       drawPlayer();
+      for (const w of wingmen) drawWingman(w);
       for (const b of bullets) drawBullet(b);
       for (const e of enemies) drawEnemy(e);
       for (const b of eBullets) drawEBullet(b);
@@ -1302,6 +1663,68 @@
       ctx.globalAlpha = 1;
       ctx.lineWidth = 1;
     }
+  }
+
+  function drawWingman(w) {
+    // Spawn-in animation: scale and fade
+    const spawn = w.spawnAnim > 0 ? 1 - w.spawnAnim / 30 : 1;
+    const scale = 0.5 + spawn * 0.3;
+    const alpha = spawn;
+    ctx.globalAlpha = alpha;
+
+    // HP-based color: 3 = cyan (healthy), 2 = yellow (wounded), 1 = red-orange (critical)
+    const hpColor = w.hp >= 3 ? '#88ddff'
+                  : w.hp === 2 ? '#ffe600'
+                  : '#ff5500';
+    const hpFill  = w.hp >= 3 ? '#082030'
+                  : w.hp === 2 ? '#3a3000'
+                  : '#3a1500';
+
+    // Hit flash — briefly tint body white when struck
+    const flashing = w.hitFlash > 0;
+
+    // Thruster — tinted to match HP color
+    const t = w.thruster;
+    ctx.fillStyle = w.hp >= 3 ? 'rgba(136, 221, 255, 0.6)'
+                  : w.hp === 2 ? 'rgba(255, 230, 0, 0.6)'
+                  : 'rgba(255, 85, 0, 0.6)';
+    ctx.shadowColor = hpColor;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(w.x - 3 * scale, w.y + 10 * scale);
+    ctx.lineTo(w.x + 3 * scale, w.y + 10 * scale);
+    ctx.lineTo(w.x, w.y + (10 + 10 * t) * scale + Math.random() * 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Ship body
+    ctx.fillStyle = flashing ? '#ffffff' : hpFill;
+    ctx.strokeStyle = flashing ? '#ffffff' : hpColor;
+    ctx.lineWidth = 1.2;
+    ctx.shadowColor = hpColor;
+    ctx.shadowBlur = flashing ? 14 : 6;
+    ctx.beginPath();
+    ctx.moveTo(w.x, w.y - 13 * scale);
+    ctx.lineTo(w.x - 11 * scale, w.y + 8 * scale);
+    ctx.lineTo(w.x - 6 * scale, w.y + 5 * scale);
+    ctx.lineTo(w.x, w.y + 10 * scale);
+    ctx.lineTo(w.x + 6 * scale, w.y + 5 * scale);
+    ctx.lineTo(w.x + 11 * scale, w.y + 8 * scale);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Cockpit — stays cyan throughout, the constant "allied" identifier
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.ellipse(w.x, w.y - 2 * scale, 2 * scale, 4 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
   }
 
   function drawBullet(b) {
@@ -1462,13 +1885,43 @@
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     document.getElementById('start-screen').classList.add('hidden');
     document.getElementById('gameover-screen').classList.add('hidden');
+    document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('power-display').classList.remove('hidden');
     document.getElementById('audio-toggles').classList.remove('hidden');
+    document.getElementById('pause-btn').classList.add('visible');
     reset();
+    refreshHighScoreDisplay();
     state = STATE.PLAY;
     if (bgmOn) startBgm('combat');
   }
+
+  function pauseGame() {
+    if (state !== STATE.PLAY) return;
+    state = STATE.PAUSED;
+    stopBgm();
+    // Release any held touches so player doesn't auto-fire on resume
+    input.move.active = false; input.move.touchId = null;
+    input.move.x = 0; input.move.y = 0;
+    input.fire.active = false; input.fire.touchId = null;
+    hideJoystick();
+    fireInd.classList.remove('firing');
+    document.getElementById('pause-screen').classList.remove('hidden');
+    document.getElementById('pause-btn').classList.remove('visible');
+  }
+
+  function resumeGame() {
+    if (state !== STATE.PAUSED) return;
+    state = STATE.PLAY;
+    document.getElementById('pause-screen').classList.add('hidden');
+    document.getElementById('pause-btn').classList.add('visible');
+    if (bgmOn) startBgm(bossActive ? 'boss' : 'combat');
+  }
+
+  // Auto-pause when user switches tabs / answers a call / locks phone
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === STATE.PLAY) pauseGame();
+  });
   document.getElementById('start-btn').addEventListener('click', startGame);
   document.getElementById('restart-btn').addEventListener('click', startGame);
   document.getElementById('start-btn').addEventListener('touchstart', (e) => { e.preventDefault(); startGame(); });
@@ -1477,6 +1930,7 @@
   // Audio toggle handlers — stopPropagation so taps don't reach the game
   const sfxBtn = document.getElementById('sfx-toggle');
   const bgmBtn = document.getElementById('bgm-toggle');
+  const hapBtn = document.getElementById('hap-toggle');
   function toggleSfx(e) {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     sfxOn = !sfxOn;
@@ -1489,15 +1943,42 @@
     if (bgmOn && state === STATE.PLAY) startBgm(bossActive ? 'boss' : 'combat');
     else if (!bgmOn) stopBgm();
   }
+  function toggleHap(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    hapticOn = !hapticOn;
+    hapBtn.classList.toggle('off', !hapticOn);
+    if (hapticOn) buzz(20); // confirmation buzz
+  }
   sfxBtn.addEventListener('click', toggleSfx);
   sfxBtn.addEventListener('touchstart', toggleSfx);
   bgmBtn.addEventListener('click', toggleBgm);
   bgmBtn.addEventListener('touchstart', toggleBgm);
+  hapBtn.addEventListener('click', toggleHap);
+  hapBtn.addEventListener('touchstart', toggleHap);
+
+  // Pause / Resume
+  const pauseBtn = document.getElementById('pause-btn');
+  function handlePause(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    pauseGame();
+  }
+  function handleResume(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    resumeGame();
+  }
+  pauseBtn.addEventListener('click', handlePause);
+  pauseBtn.addEventListener('touchstart', handlePause);
+  document.getElementById('resume-btn').addEventListener('click', handleResume);
+  document.getElementById('resume-btn').addEventListener('touchstart', handleResume);
+
+  // Show high score on start screen at load time
+  refreshHighScoreDisplay();
 
   resize();
   initStars();
   player = { x: VW/2, y: VH-100, w:28, h:32, speed:4, cooldown:0, invuln:0, thruster:0.5 };
   bullets = []; enemies = []; eBullets = []; particles = []; powerups = []; floatTexts = []; burstWaves = [];
+  wingmen = [];
   loop();
 })();
 </script>
