@@ -61,15 +61,22 @@
   .hud-value { font-size: 18px; font-weight: bold; }
   .hud-right { text-align: right; }
   #lives { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta); }
-  #power-display {
+  #wave-display {
     position: fixed; top: 50px; left: 18px;
+    color: var(--neon-magenta);
+    font-size: 10px; letter-spacing: 2px;
+    text-shadow: 0 0 6px var(--neon-magenta);
+    z-index: 10; pointer-events: none;
+  }
+  #power-display {
+    position: fixed; top: 68px; left: 18px;
     color: var(--neon-yellow);
     font-size: 10px; letter-spacing: 2px;
     text-shadow: 0 0 6px var(--neon-yellow);
     z-index: 10; pointer-events: none;
   }
   #charge-display {
-    position: fixed; top: 68px; left: 18px;
+    position: fixed; top: 86px; left: 18px;
     color: var(--neon-orange);
     font-size: 10px; letter-spacing: 2px;
     text-shadow: 0 0 6px var(--neon-orange);
@@ -82,22 +89,12 @@
     0%, 100% { filter: brightness(1); }
     50% { filter: brightness(1.6); }
   }
+  /* pause button lives inside .audio-toggles cluster — inherits sizing/colors.
+     A few small overrides so the "II" reads clearly as a pause icon. */
   #pause-btn {
-    position: fixed; top: 14px; right: 14px;
-    width: 32px; height: 32px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(0,240,255,0.4);
-    border-radius: 50%;
-    color: var(--neon-cyan);
-    font-size: 12px; font-weight: bold;
-    cursor: pointer;
-    z-index: 11;
-    text-shadow: 0 0 6px var(--neon-cyan);
-    display: none;
-    align-items: center; justify-content: center;
-    font-family: inherit;
+    font-weight: bold;
+    letter-spacing: -1px;
   }
-  #pause-btn.visible { display: flex; }
   #high-score-display {
     color: var(--neon-yellow);
     font-size: 11px; letter-spacing: 3px;
@@ -282,14 +279,15 @@
     <span class="hud-value" id="lives">▲▲▲</span>
   </div>
 </div>
+<div id="wave-display" class="hidden">WAVE 1</div>
 <div id="power-display" class="hidden">PWR ●○○○○○</div>
 <div id="charge-display">BURST [          ]</div>
 <div class="audio-toggles hidden" id="audio-toggles">
   <button id="sfx-toggle" title="Sound FX">♪</button>
   <button id="bgm-toggle" title="Music">♫</button>
   <button id="hap-toggle" title="Haptic">▒</button>
+  <button id="pause-btn" title="Pause">II</button>
 </div>
-<button id="pause-btn" title="Pause">II</button>
 
 <div id="left-zone" class="control-zone"></div>
 <div id="right-zone" class="control-zone"></div>
@@ -1393,6 +1391,7 @@
         wave++;
         waveTimer = 0;
         SFX.wave();
+        updateHUD();
         if (wave % 5 === 0) spawnBoss();
       }
     }
@@ -1438,10 +1437,10 @@
       finalizeGame();
       document.getElementById('gameover-screen').classList.remove('hidden');
       document.getElementById('hud').classList.add('hidden');
+      document.getElementById('wave-display').classList.add('hidden');
       document.getElementById('power-display').classList.add('hidden');
       document.getElementById('charge-display').classList.remove('visible');
       document.getElementById('audio-toggles').classList.add('hidden');
-      document.getElementById('pause-btn').classList.remove('visible');
     }
   }
 
@@ -1480,6 +1479,7 @@
     const l = Math.max(0, lives);
     document.getElementById('lives').textContent =
       l <= 9 ? '▲'.repeat(l) : '▲ ×' + l;
+    document.getElementById('wave-display').textContent = 'WAVE ' + wave;
     const filled = '●'.repeat(powerLevel);
     const empty = '○'.repeat(6 - powerLevel);
     document.getElementById('power-display').textContent = 'PWR ' + filled + empty;
@@ -1887,9 +1887,9 @@
     document.getElementById('gameover-screen').classList.add('hidden');
     document.getElementById('pause-screen').classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
+    document.getElementById('wave-display').classList.remove('hidden');
     document.getElementById('power-display').classList.remove('hidden');
     document.getElementById('audio-toggles').classList.remove('hidden');
-    document.getElementById('pause-btn').classList.add('visible');
     reset();
     refreshHighScoreDisplay();
     state = STATE.PLAY;
@@ -1907,14 +1907,12 @@
     hideJoystick();
     fireInd.classList.remove('firing');
     document.getElementById('pause-screen').classList.remove('hidden');
-    document.getElementById('pause-btn').classList.remove('visible');
   }
 
   function resumeGame() {
     if (state !== STATE.PAUSED) return;
     state = STATE.PLAY;
     document.getElementById('pause-screen').classList.add('hidden');
-    document.getElementById('pause-btn').classList.add('visible');
     if (bgmOn) startBgm(bossActive ? 'boss' : 'combat');
   }
 
@@ -1992,5 +1990,8 @@
     });
   }
 </script>
+<!-- Cloudflare Web Analytics -->
+<script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "5b577dd19c8c48c1bcfa958498796218"}'></script>
+<!-- End Cloudflare Web Analytics -->
 </body>
 </html>
