@@ -2,7 +2,7 @@
 // Caches all game assets so the app loads instantly and works offline.
 // Bump CACHE_VERSION whenever you change index.html or icons to force update.
 
-const CACHE_VERSION = 'neon-strike-v10';
+const CACHE_VERSION = 'neon-strike-v46';
 const ASSETS = [
   './',
   './index.html',

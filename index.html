@@ -306,9 +306,9 @@
   </div>
   <div class="legend">
     <span class="pu">P</span> POWER UP · <span class="life">1UP</span> EXTRA SHIP<br>
-    BONUS SHIP EVERY 10,000 PTS · BOSS EVERY 5 WAVES<br>
-    TIER 6 · <span class="burst">RADIAL BURST</span> CLEARS BULLETS<br>
-    MAX TIER POWERUPS · <span style="color:#88ddff">WINGMEN JOIN</span> (UP TO 6)<br>
+    BOSS EVERY 5 WAVES · BREAK EVERY 20<br>
+    TIER UNLOCKS WAVES 1-11 · WINGMEN AT 13+<br>
+    BONUS SHIP EVERY 10,000 PTS<br>
     ♪ SFX · ♫ MUSIC · ▒ HAPTIC (TOP CENTER)
   </div>
 </div>
@@ -330,6 +330,7 @@
     <div class="stats-row"><span class="label">Kamikazes</span><span class="value" id="kill-kamikaze">0</span></div>
     <div class="stats-row"><span class="label">Tanks</span><span class="value" id="kill-tank">0</span></div>
     <div class="stats-row"><span class="label">Snipers</span><span class="value" id="kill-sniper">0</span></div>
+    <div class="stats-row"><span class="label">Elite Tanks</span><span class="value" id="kill-elite">0</span></div>
     <div class="stats-row"><span class="label">Bosses</span><span class="value" id="kill-boss">0</span></div>
     <div class="stats-divider"></div>
     <div class="stats-row"><span class="label">Total kills</span><span class="value" id="stat-total">0</span></div>
@@ -491,9 +492,16 @@
   // Boss: D minor, lower octave, dissonant chord stabs.
   // Frequencies (Hz) for notes we'll use.
   const NOTE = {
+    // Octave 1-2 — deep bass (used by boss themes)
+    A1: 55.00, C2: 65.41, D2: 73.42, E2: 82.41, F2: 87.31, G2: 98.00,
+    // Octave 2-3
     A2: 110.00, B2: 123.47, C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00,
+    // Octave 3-4
     A3: 220.00, B3: 246.94, C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00,
-    A4: 440.00, B4: 493.88, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00
+    // Octave 4-5
+    A4: 440.00, B4: 493.88, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99,
+    // Octave 5-6
+    A5: 880.00, B5: 987.77
   };
 
   // Patterns are arrays of note-or-null per 16th step. 16 steps = 1 bar.
@@ -522,6 +530,49 @@
   const BOSS_LEAD = [
     'D4', null, 'F4', null, 'A4', null, 'F4', 'D4',
     'A4', null, 'G4', 'F4', 'E4', null, 'D4', null
+  ];
+
+  // Boss-specific themes — each boss has its own bass+lead pattern.
+  // Hive: chaotic swarm — high-register lead, rapid bass (E minor)
+  const BOSS_HIVE_BASS = [
+    'E3', null, 'E3', null, 'G3', null, 'E3', null,
+    'A3', null, 'E3', null, 'B3', null, 'G3', null
+  ];
+  const BOSS_HIVE_LEAD = [
+    'E5', 'G5', 'B5', 'G5', 'E5', 'D5', 'B4', 'G4',
+    'A5', 'E5', 'G5', 'B5', 'D5', 'B4', 'G4', 'E4'
+  ];
+
+  // Cruiser: heavy aggressive mechanical (D minor)
+  const BOSS_CRUISER_BASS = [
+    'D2', null, 'D2', null, 'D2', null, 'D2', null,
+    'A2', null, 'F2', null, 'C3', null, 'A2', null
+  ];
+  const BOSS_CRUISER_LEAD = [
+    'A4', null, 'F4', null, 'D4', null, 'F4', 'A4',
+    'C5', null, 'A4', null, 'F4', null, 'D4', null
+  ];
+
+  // Sentinel: suspenseful atmospheric (A minor — sparse)
+  const BOSS_SENTINEL_BASS = [
+    'A2', null, null, null, 'E3', null, null, null,
+    'F3', null, null, null, 'A2', null, 'D3', null
+  ];
+  const BOSS_SENTINEL_LEAD = [
+    'E4', null, null, 'A4', null, null, 'G4', null,
+    'F4', null, null, 'A4', null, 'E4', null, null
+  ];
+
+  // Mothership: epic doom — lowest bass, longest sustains (D minor)
+  const BOSS_MOTHERSHIP_BASS = [
+    'D2', null, null, null, 'D2', null, null, null,
+    'C2', null, null, null, 'A1' /* fallback */, null, null, null
+  ];
+  BOSS_MOTHERSHIP_BASS[12] = 'D2'; // A1 isn't defined, fall back to D2
+
+  const BOSS_MOTHERSHIP_LEAD = [
+    'D4', null, null, 'F4', null, null, 'A4', null,
+    null, null, 'A4', null, 'D5', null, 'A4', 'F4'
   ];
 
   let bgm = {
@@ -619,14 +670,41 @@
       // Drums
       scheduleBgmDrum(when, intensity);
     } else {
-      // Boss
-      const b = BOSS_BASS[idx];
-      if (b) scheduleBgmTone(noteFreq(b), when, 0.25, 'sawtooth', 0.2);
-      const l = BOSS_LEAD[idx];
+      // Boss-specific patterns. Each boss kind has its own bass/lead arrays
+      // plus a characteristic instrument timbre.
+      let bassArr, leadArr, bassType, leadType, bassVol, leadVol, fifth;
+      if (bgm.mode === 'boss_hive') {
+        // Chaotic swarm — high lead, brighter
+        bassArr = BOSS_HIVE_BASS; leadArr = BOSS_HIVE_LEAD;
+        bassType = 'square'; leadType = 'sawtooth';
+        bassVol = 0.18; leadVol = 0.10; fifth = false;
+      } else if (bgm.mode === 'boss_cruiser') {
+        // Mechanical aggression — deep bass, punchy lead
+        bassArr = BOSS_CRUISER_BASS; leadArr = BOSS_CRUISER_LEAD;
+        bassType = 'sawtooth'; leadType = 'square';
+        bassVol = 0.22; leadVol = 0.12; fifth = true;
+      } else if (bgm.mode === 'boss_sentinel') {
+        // Suspenseful atmospheric — sparse, sustained
+        bassArr = BOSS_SENTINEL_BASS; leadArr = BOSS_SENTINEL_LEAD;
+        bassType = 'triangle'; leadType = 'triangle';
+        bassVol = 0.16; leadVol = 0.11; fifth = false;
+      } else if (bgm.mode === 'boss_mothership') {
+        // Epic doom — lowest bass, slow heavy lead
+        bassArr = BOSS_MOTHERSHIP_BASS; leadArr = BOSS_MOTHERSHIP_LEAD;
+        bassType = 'sawtooth'; leadType = 'sawtooth';
+        bassVol = 0.24; leadVol = 0.13; fifth = true;
+      } else {
+        // Default fallback (legacy 'boss')
+        bassArr = BOSS_BASS; leadArr = BOSS_LEAD;
+        bassType = 'sawtooth'; leadType = 'square';
+        bassVol = 0.20; leadVol = 0.12; fifth = true;
+      }
+      const b = bassArr[idx];
+      if (b) scheduleBgmTone(noteFreq(b), when, 0.25, bassType, bassVol);
+      const l = leadArr[idx];
       if (l) {
-        scheduleBgmTone(noteFreq(l), when, 0.2, 'square', 0.12);
-        // Add a dissonant fifth on emphasized beats
-        if (idx % 4 === 0) scheduleBgmTone(noteFreq(l) * 1.5, when, 0.15, 'square', 0.06);
+        scheduleBgmTone(noteFreq(l), when, 0.2, leadType, leadVol);
+        if (fifth && idx % 4 === 0) scheduleBgmTone(noteFreq(l) * 1.5, when, 0.15, 'square', 0.06);
       }
       scheduleBgmDrum(when, Math.max(0.7, intensity));
     }
@@ -660,6 +738,16 @@
     bgm.playing = false;
     if (bgm.schedulerId) clearTimeout(bgm.schedulerId);
     bgm.schedulerId = null;
+  }
+
+  // Returns the appropriate BGM mode string based on which boss (if any) is active.
+  // Used by callers that previously hardcoded 'boss' vs 'combat'.
+  function currentBgmMode() {
+    if (!bossActive) return 'combat';
+    for (const e of enemies) {
+      if (e.type === 'boss' && e.bossKind) return 'boss_' + e.bossKind;
+    }
+    return 'boss'; // legacy fallback
   }
 
   function setBgmMode(mode) {
@@ -769,10 +857,14 @@
   }
 
   // ============ GAME STATE ============
-  const STATE = { START: 0, PLAY: 1, OVER: 2, PAUSED: 3 };
+  const STATE = { START: 0, PLAY: 1, OVER: 2, PAUSED: 3, BREAK: 4 };
   let state = STATE.START;
   let score = 0, lives = 3, wave = 1;
   let time = 0, lastSpawn = 0, waveTimer = 0;
+  // Debug overlay (off — bug fixed). Set to true to inspect turret hit zones.
+  const DEBUG_MOTHERSHIP_TURRETS = false;
+  let dbgLastTurretHit = -1;    // index of last turret hit (-1 if none yet)
+  let dbgLastTurretHitT = 0;    // frame counter for fade-out
   let powerLevel = 1;
   let highestPowerLevel = 1; // tracks highest tier reached this run, for death-drop floor
   let lastBonusScore = 0;
@@ -800,6 +892,205 @@
   const CHARGE_MAX = 60;
   let chargeReadyAnnounced = false;
 
+  // ============ PROGRESSION HELPERS ============
+  // Tier cap by wave — gradual unlock so each new weapon is introduced cleanly.
+  function tierCapForWave(w) {
+    if (w <= 2)  return 1;
+    if (w <= 4)  return 2;
+    if (w <= 6)  return 3;
+    if (w <= 8)  return 4;
+    if (w <= 10) return 5;
+    return 6; // wave 11+
+  }
+  // Wingmen become recruitable at wave 13+
+  function wingmenUnlockedForWave(w) { return w >= 13; }
+
+  // Wave length scales down over time — longer early waves to let players learn
+  function waveDurationForWave(w) {
+    if (w <= 2)  return 900; // 15s
+    if (w <= 10) return 720; // 12s
+    return 600;              // 10s
+  }
+
+  // Enemy pool — stretched introduction, kamikaze appears with first boss
+  function enemyPoolForWave(w) {
+    if (w <= 2)  return { grunt: 1.0 };
+    if (w <= 4)  return { grunt: 0.7, weaver: 0.3 };
+    if (w <= 6)  return { grunt: 0.5, weaver: 0.25, kamikaze: 0.25 };
+    if (w <= 8)  return { grunt: 0.35, weaver: 0.25, kamikaze: 0.2, sniper: 0.2 };
+    if (w <= 10) return { grunt: 0.3, weaver: 0.2, kamikaze: 0.2, sniper: 0.15, tank: 0.15 };
+    return { grunt: 0.3, weaver: 0.2, kamikaze: 0.2, sniper: 0.15, tank: 0.15 };
+  }
+
+  // Kamikaze speed scales with wave. Chase (post-lock) caps at 10 — reached at
+  // wave 81 with a slope of 0.08125 per wave. From mid-game onward kamikazes
+  // are significantly faster than the player ship (4.2), so dodging requires
+  // direction-change rather than outrunning. Drift (pre-lock) preserves the
+  // original 2.5/3.5 ratio.
+  function kamikazeChaseSpeedForWave(w) {
+    return Math.min(10, 3.5 + (w - 1) * 0.08125);
+  }
+  function kamikazeDriftSpeedForWave(w) {
+    return kamikazeChaseSpeedForWave(w) * (2.5 / 3.5);
+  }
+
+  // Sniper bullets speed up in steps per wave tier. Snipers fire aimed shots,
+  // so faster bullets give the player less reaction time to dodge.
+  function sniperBulletSpeedForWave(w) {
+    if (w <= 20) return 4.5;
+    if (w <= 40) return 4.75;
+    if (w <= 60) return 5.0;
+    if (w <= 80) return 5.25;
+    return 5.5;
+  }
+
+  // Weaver burst pattern: bullets per burst scales with wave. Within a burst,
+  // bullets fire every WEAVER_INTER_BULLET frames — combined with the weaver's
+  // lateral motion (vx=±2.5), each bullet falls in a different column, forming
+  // a diagonal "curtain" the player has to weave through.
+  const WEAVER_INTER_BULLET = 20;   // frames between bullets within a burst (0.33s)
+  const WEAVER_BURST_CYCLE = 100;   // total frames per cycle (burst + cooldown)
+  const WEAVER_INITIAL_DELAY = 30;  // first shot fires 0.5s after spawn (was 1.5s)
+  function weaverBurstCountForWave(w) {
+    if (w <= 40) return 1;
+    if (w <= 80) return 2;
+    return 3;
+  }
+
+  // Sector names: each block of 20 waves is a named sector
+  const SECTOR_NAMES = [
+    'OUTER BELT',     // sector 1 (waves 1-20)
+    'DEEP VOID',      // sector 2 (waves 21-40)
+    'CRIMSON DRIFT',  // sector 3
+    'HELIOPAUSE',     // sector 4
+    'THE EDGE',       // sector 5
+    'UNKNOWN SPACE'   // sector 6
+  ];
+  function sectorNameForNumber(n) {
+    // n is 1-indexed sector number
+    if (n <= SECTOR_NAMES.length) return SECTOR_NAMES[n - 1];
+    return 'UNKNOWN SECTOR ' + n;
+  }
+
+  // Visual theme per sector. Each theme has a background tint, star colors,
+  // and a list of "nebula" clouds — soft radial gradients positioned around
+  // the screen that give each sector a distinct visual identity. Nebulae use
+  // low alpha values so they read as distant cloud texture rather than
+  // overwhelming the neon foreground.
+  const SECTOR_THEMES = [
+    {
+      // 1 OUTER BELT — inhabited blue space
+      bg: '#001020',
+      starBright: '#ffffff', starDim: '#aabbdd',
+      nebulae: [
+        { x: 60,  y: 90,  r: 200, color: '#3366aa', alpha: 0.22 },
+        { x: 310, y: 480, r: 160, color: '#446699', alpha: 0.18 }
+      ]
+    },
+    {
+      // 2 DEEP VOID — empty, sparse, faint purple
+      bg: '#040018',
+      starBright: '#ccbbff', starDim: '#5544aa',
+      nebulae: [
+        { x: 200, y: 320, r: 280, color: '#221144', alpha: 0.30 }
+      ]
+    },
+    {
+      // 3 CRIMSON DRIFT — dramatic red nebula
+      bg: '#1a0608',
+      starBright: '#ffccaa', starDim: '#aa6655',
+      nebulae: [
+        { x: 280, y: 140, r: 240, color: '#882233', alpha: 0.32 },
+        { x: 80,  y: 420, r: 180, color: '#cc5533', alpha: 0.22 },
+        { x: 200, y: 600, r: 140, color: '#aa3322', alpha: 0.16 }
+      ]
+    },
+    {
+      // 4 HELIOPAUSE — bright warm sun-glow at top edge
+      bg: '#1a0e02',
+      starBright: '#ffeeaa', starDim: '#cc9966',
+      nebulae: [
+        { x: 180, y: -50, r: 320, color: '#ffaa33', alpha: 0.28 },
+        { x: 60,  y: 380, r: 200, color: '#cc7722', alpha: 0.18 },
+        { x: 300, y: 520, r: 160, color: '#996633', alpha: 0.20 }
+      ]
+    },
+    {
+      // 5 THE EDGE — cold cyan frontier, sharp
+      bg: '#001a22',
+      starBright: '#ddffff', starDim: '#7799aa',
+      nebulae: [
+        { x: 320, y: 100, r: 220, color: '#226699', alpha: 0.28 },
+        { x: 40,  y: 540, r: 160, color: '#0a3344', alpha: 0.30 }
+      ]
+    },
+    {
+      // 6 UNKNOWN SPACE — eerie alien region. Beyond wave 100, the nebulae
+      // continually drift and cycle hue to suggest endless, unmapped space.
+      bg: '#02180a',
+      starBright: '#ccffdd', starDim: '#669977',
+      // Static nebulae anchor — used for morphing INTO sector 6 during the
+      // break scene (so the morph has hex-comparable colors), and as a
+      // fallback if animation logic is skipped.
+      nebulae: [
+        { x: 90,  y: 180, r: 200, color: '#226633', alpha: 0.26 },
+        { x: 280, y: 480, r: 220, color: '#338855', alpha: 0.22 }
+      ],
+      // Animated nebulae — used during STATE.PLAY at wave > 100. Each entry
+      // orbits its center via lissajous math, slowly cycles hue, and pulses
+      // alpha/size. Three nebulae give richer visual variety than the two
+      // static anchors.
+      animatedNebulae: [
+        { cx: 90,  cy: 180, baseR: 200, baseAlpha: 0.28, hueStart: 130, hueSpeed: 0.8, drift: 100, phaseOffset: 0 },
+        { cx: 280, cy: 480, baseR: 220, baseAlpha: 0.24, hueStart: 145, hueSpeed: 0.6, drift: 90,  phaseOffset: 2.1 },
+        { cx: 180, cy: 320, baseR: 160, baseAlpha: 0.20, hueStart: 100, hueSpeed: 1.0, drift: 120, phaseOffset: 4.2 }
+      ]
+    }
+  ];
+  function sectorThemeForWave(w) {
+    const sector = Math.max(1, Math.ceil(w / 20));
+    const idx = Math.min(sector, SECTOR_THEMES.length) - 1;
+    return SECTOR_THEMES[idx];
+  }
+
+  // Convert a hex color like '#3366aa' to an rgba() string with given alpha
+  function hexAlpha(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+
+  // Linearly interpolate two hex colors. t in [0,1]. Returns rgb() string.
+  function lerpHexColor(a, b, t) {
+    const ra = parseInt(a.slice(1, 3), 16);
+    const ga = parseInt(a.slice(3, 5), 16);
+    const ba_ = parseInt(a.slice(5, 7), 16);
+    const rb = parseInt(b.slice(1, 3), 16);
+    const gb = parseInt(b.slice(3, 5), 16);
+    const bb = parseInt(b.slice(5, 7), 16);
+    const r = Math.round(ra + (rb - ra) * t);
+    const g = Math.round(ga + (gb - ga) * t);
+    const bc = Math.round(ba_ + (bb - ba_) * t);
+    return 'rgb(' + r + ',' + g + ',' + bc + ')';
+  }
+
+  // Returns 0..1 indicating how far along the sector transition we are during
+  // the break scene. Uses smoothstep so the morph is gentle at the start and
+  // end and most rapid through the middle (matches the 'quiet' phase).
+  function breakMorphProgress() {
+    if (!breakState) return 0;
+    let elapsed = breakState.timer;
+    if (breakState.phase === 'quiet') elapsed += BREAK_CLEARED_FRAMES;
+    else if (breakState.phase === 'incoming') elapsed += BREAK_CLEARED_FRAMES + BREAK_QUIET_FRAMES;
+    const total = BREAK_CLEARED_FRAMES + BREAK_QUIET_FRAMES + BREAK_INCOMING_FRAMES;
+    const raw = Math.min(1, Math.max(0, elapsed / total));
+    return raw * raw * (3 - 2 * raw); // smoothstep
+  }
+
+  // Break scene tracking
+  let breakState = null; // { phase, timer, sectorJustCleared, sectorScoreStart, accuracyStart }
+
   // ============ STATS TRACKING ============
   // bulletsFired: how many player projectiles spawned (any source counts)
   // bulletsHit:   how many actually connected with an enemy
@@ -810,7 +1101,7 @@
     return {
       bulletsFired: 0,
       bulletsHit: 0,
-      kills: { grunt: 0, weaver: 0, kamikaze: 0, tank: 0, sniper: 0, boss: 0 }
+      kills: { grunt: 0, weaver: 0, kamikaze: 0, tank: 0, sniper: 0, eliteTank: 0, boss: 0 }
     };
   }
 
@@ -820,6 +1111,7 @@
     highestPowerLevel = 1;
     lastBonusScore = 0; bossActive = false;
     chargeMeter = 0; chargeReadyAnnounced = false;
+    breakState = null;
     stats = newStats();
     player = { x: VW / 2, y: VH - 100, w: 28, h: 32, speed: 4.2, cooldown: 0, invuln: 60, thruster: 0 };
     bullets = []; enemies = []; eBullets = []; particles = []; powerups = []; floatTexts = []; burstWaves = [];
@@ -838,48 +1130,1116 @@
   function spawnEnemy(type) {
     const t = type || pickEnemyType();
     if (t === 'grunt') {
-      enemies.push({ type: 'grunt', x: 30 + Math.random() * (VW - 60), y: -30, w: 22, h: 22, hp: 1, maxHp: 1, vy: 1.6 + wave * 0.1, vx: 0, fireT: 60 + Math.random() * 60, color: '#ff007a', score: 100 });
+      // Body speed scales with wave but caps at 6 px/frame so grunts don't outrun
+      // their own bullets (3.5) so aggressively that they stop firing entirely.
+      const gvy = Math.min(6, 1.6 + wave * 0.1);
+      enemies.push({ type: 'grunt', x: 30 + Math.random() * (VW - 60), y: -30, w: 22, h: 22, hp: 1, maxHp: 1, vy: gvy, vx: 0, fireT: 60 + Math.random() * 60, color: '#ff007a', score: 100 });
     } else if (t === 'weaver') {
       const side = Math.random() < 0.5 ? -1 : 1;
-      enemies.push({ type: 'weaver', x: side < 0 ? -20 : VW + 20, y: 40 + Math.random() * 80, w: 24, h: 22, hp: 2, maxHp: 2, vy: 0.4, vx: side * 2.5, fireT: 90, phase: Math.random() * Math.PI * 2, color: '#ffe600', score: 200 });
+      enemies.push({ type: 'weaver', x: side < 0 ? -20 : VW + 20, y: 40 + Math.random() * 80, w: 24, h: 22, hp: 2, maxHp: 2, vy: 0.4, vx: side * 2.5, fireT: WEAVER_INITIAL_DELAY, phase: Math.random() * Math.PI * 2, color: '#ffe600', score: 200, burstShotsLeft: 0, burstCount: weaverBurstCountForWave(wave) });
     } else if (t === 'tank') {
       const hp = 6 + Math.floor(wave / 2);
       enemies.push({ type: 'tank', x: 50 + Math.random() * (VW - 100), y: -50, w: 36, h: 38, hp, maxHp: hp, vy: 0.9, vx: 0, fireT: 90, color: '#00f0ff', score: 500 });
     } else if (t === 'sniper') {
       enemies.push({ type: 'sniper', x: 30 + Math.random() * (VW - 60), y: -30, w: 24, h: 26, hp: 2, maxHp: 2, vy: 1.0, vx: 0, fireT: 70, color: '#a855ff', score: 250, stopY: 80 + Math.random() * 60 });
     } else if (t === 'kamikaze') {
-      enemies.push({ type: 'kamikaze', x: 30 + Math.random() * (VW - 60), y: -30, w: 20, h: 24, hp: 1, maxHp: 1, vy: 2.5, vx: 0, fireT: 999, color: '#ff5500', score: 150, locked: false, lockTimer: 30 });
+      const drift = kamikazeDriftSpeedForWave(wave);
+      const chase = kamikazeChaseSpeedForWave(wave);
+      enemies.push({ type: 'kamikaze', x: 30 + Math.random() * (VW - 60), y: -30, w: 20, h: 24, hp: 1, maxHp: 1, vy: drift, vx: 0, fireT: 999, color: '#ff5500', score: 150, locked: false, lockTimer: 30, chaseSpeed: chase });
     }
+  }
+
+  // ============ BOSS ROTATION ============
+  // TEMPORARY: sequential testing mode — every boss wave cycles through implemented
+  // boss types so all variants can be tested without grinding to wave 60.
+  // To switch to proper Option C (gradual per-sector introduction), replace
+  // the body of pickBossKind with the commented-out version below.
+  // Only cruiser + hive implemented so far; sentinel and mothership coming in future updates.
+  function pickBossKind() {
+    // Bosses appear every 5 waves and rotate in fixed order.
+    // Wave 5 = Hive, 10 = Cruiser, 15 = Sentinel, 20 = Mothership, 25 = Hive, ...
+    const cycle = ['hive', 'cruiser', 'sentinel', 'mothership'];
+    const slot = Math.floor((wave - 5) / 5) % cycle.length;
+    return cycle[slot];
   }
 
   function spawnBoss() {
     bossActive = true;
     SFX.boss();
-    setBgmMode('boss');
+    const kind = pickBossKind();
+    setBgmMode('boss_' + kind);
+    if (kind === 'hive') spawnHive();
+    else if (kind === 'sentinel') spawnSentinelGroup();
+    else if (kind === 'mothership') spawnMothership();
+    else spawnCruiser(); // fallback for cruiser + any not-yet-implemented kinds
+  }
+
+  // Sentinels travel in groups at higher waves: 1 at 1-40, 2 at 41-80, 3 at 81+.
+  function sentinelCountForWave(w) {
+    if (w <= 40) return 1;
+    if (w <= 80) return 2;
+    return 3;
+  }
+
+  function spawnSentinelGroup() {
+    const count = sentinelCountForWave(wave);
+    // Spawn at offset x positions so they don't stack. Each sentinel starts in
+    // a different phase (0, 1, 2 for 3 sentinels) so the screen always shows
+    // a mix of patterns rather than synchronized behavior.
+    for (let i = 0; i < count; i++) {
+      const offsetX = (count === 1) ? 0 : ((i - (count - 1) / 2) * 80);
+      spawnSentinel(offsetX, count, i);
+    }
+  }
+
+  function spawnCruiser() {
     const hp = 60 + wave * 8;
-    enemies.push({ type: 'boss', x: VW / 2, y: -80, w: 90, h: 70, hp, maxHp: hp, vy: 0.6, vx: 1.2, fireT: 30, color: '#ff007a', score: 5000, stopY: 120, phase: 0, phaseT: 0 });
+    enemies.push({
+      type: 'boss', bossKind: 'cruiser',
+      x: VW / 2, y: -80, w: 90, h: 70,
+      hp, maxHp: hp,
+      vy: 0.6, vx: 1.2,
+      fireT: 30, color: '#ff7733',
+      score: 5000,
+      stopY: 120, phase: 0, phaseT: 0
+    });
+  }
+
+  // Apply the effect of collecting a powerup (used both by normal collision
+  // and by the sector-break auto-collect path).
+  function collectPowerup(p) {
+    if (p.type === 'life') {
+      lives++;
+      SFX.extraLife();
+      HAPTIC.life();
+      floatText(p.x, p.y - 10, '1UP', '#00ff88');
+      score += 100;
+    } else {
+      const tierCap = tierCapForWave(wave);
+      const wingmenUnlocked = wingmenUnlockedForWave(wave);
+      if (powerLevel < tierCap) {
+        powerLevel++;
+        if (powerLevel > highestPowerLevel) highestPowerLevel = powerLevel;
+        SFX.powerup();
+        HAPTIC.powerup();
+        floatText(p.x, p.y - 10, powerLevel === 6 ? 'MAX!' : 'POWER UP', '#ffe600');
+        score += 50;
+      } else if (powerLevel < 6 && !wingmenUnlocked) {
+        SFX.powerup();
+        HAPTIC.powerup();
+        floatText(p.x, p.y - 10, '+200 LOCKED', '#ffaa00');
+        score += 200;
+      } else if (powerLevel === 6 && wingmenUnlocked && wingmen.length < MAX_WINGMEN) {
+        spawnWingman();
+        SFX.powerup();
+        HAPTIC.powerup();
+        floatText(p.x, p.y - 10, 'WINGMAN!', '#00ff88');
+        score += 200;
+      } else if (powerLevel === 6 && !wingmenUnlocked) {
+        SFX.powerup();
+        HAPTIC.powerup();
+        floatText(p.x, p.y - 10, '+200 LOCKED', '#ffaa00');
+        score += 200;
+      } else {
+        // Max tier + max wingmen: try healing, else score overflow
+        let target = null;
+        let lowestHp = 999;
+        for (const w of wingmen) {
+          if (w.hp < w.maxHp && w.hp < lowestHp) {
+            lowestHp = w.hp;
+            target = w;
+          }
+        }
+        if (target) {
+          target.hp++;
+          SFX.powerup();
+          HAPTIC.powerup();
+          for (let k = 0; k < 8; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = Math.random() * 1.5 + 0.5;
+            particles.push({ x: target.x, y: target.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 25, max: 30, color: '#00ff88', size: 2 });
+          }
+          floatText(target.x, target.y - 14, '+HP', '#00ff88');
+          score += 100;
+        } else {
+          score += 500;
+          SFX.powerup();
+          HAPTIC.powerup();
+          floatText(p.x, p.y - 10, '+500', '#ffe600');
+        }
+      }
+    }
+    updateHUD();
+  }
+
+  // ============ HIVE ELITE TANKS ============
+  // The Hive deploys up to 5 elite tanks in a horizontal row in front of it.
+  // Slots are fixed positions (don't move with the boss). Elite tanks fly from
+  // the boss vents to their assigned slot, then become stationary and fire.
+  // Elite tanks block player bullets via natural collision (closest enemy first).
+  const ELITE_SLOT_COUNT = 9;
+  const ELITE_SLOT_SPACING = 36;          // horizontal gap between slot centers
+  const ELITE_ROW_Y = 200;                // y-position of the slot row (below the Hive)
+  // Fill order: center first, then alternate outward.
+  // Slot indices 0..8 map left-to-right. Fill in order: 4, 3, 5, 2, 6, 1, 7, 0, 8.
+  const ELITE_FILL_ORDER = [4, 3, 5, 2, 6, 1, 7, 0, 8];
+
+  // Returns absolute (x,y) for a slot index relative to the boss's starting position
+  function eliteSlotPosition(slotIdx) {
+    const rowWidth = (ELITE_SLOT_COUNT - 1) * ELITE_SLOT_SPACING;
+    const startX = VW / 2 - rowWidth / 2;
+    return { x: startX + slotIdx * ELITE_SLOT_SPACING, y: ELITE_ROW_Y };
+  }
+
+  // Returns the next slot index to fill (lowest in ELITE_FILL_ORDER that is empty),
+  // or -1 if all slots are full.
+  function nextEliteSlot(hive) {
+    for (const idx of ELITE_FILL_ORDER) {
+      if (!hive.eliteSlots[idx]) return idx;
+    }
+    return -1;
+  }
+
+  // Per-wave configuration: { atSpawn, replenishCount, replenishInterval (frames) }
+  // Initial formation gets meaningfully larger every 20 waves. Replenish is
+  // separately tuned: counts and intervals govern how aggressively the formation
+  // refills as the player chips elites down.
+  function hiveEliteConfigForWave(w) {
+    if (w <= 20) return { atSpawn: 1, replenishCount: 1, replenishInterval: 360 }; // 1 every 6s
+    if (w <= 40) return { atSpawn: 3, replenishCount: 1, replenishInterval: 300 }; // 1 every 5s
+    if (w <= 60) return { atSpawn: 5, replenishCount: 2, replenishInterval: 300 }; // 2 every 5s
+    if (w <= 80) return { atSpawn: 7, replenishCount: 2, replenishInterval: 240 }; // 2 every 4s
+    return         { atSpawn: 9, replenishCount: 3, replenishInterval: 240 };       // 3 every 4s
+  }
+
+  // Spawn an eliteTank that flies from the boss to a target slot
+  function spawnEliteTank(hive, slotIdx) {
+    const slot = eliteSlotPosition(slotIdx);
+    // Start from one of the Hive's vents (alternate based on slot)
+    const ventSide = (slotIdx < 2) ? -1 : (slotIdx > 2 ? 1 : (Math.random() < 0.5 ? -1 : 1));
+    const startX = hive.x + ventSide * 50;
+    const startY = hive.y + 10;
+    const hp = 12 + Math.floor(wave / 2);
+    const tank = {
+      type: 'eliteTank',
+      x: startX, y: startY,
+      targetX: slot.x, targetY: slot.y,
+      slotIdx,
+      w: 40, h: 42,
+      hp, maxHp: hp,
+      vy: 0, vx: 0,
+      fireT: 90 + Math.random() * 30,  // small fire delay after arrival
+      color: '#00f0ff',
+      score: 750,
+      arrived: false,
+      arrivalT: 0,                     // counts up while in flight
+      // Reference to the parent hive so we can clear the slot on death
+      hiveRef: hive
+    };
+    hive.eliteSlots[slotIdx] = tank;
+    enemies.push(tank);
+  }
+
+  function spawnHive() {
+    // Lower base HP (minions do the damage) but slower scaling.
+    const hp = 100 + wave * 6;
+    const cfg = hiveEliteConfigForWave(wave);
+    const hive = {
+      type: 'boss', bossKind: 'hive',
+      x: VW / 2, y: -90, w: 100, h: 80,
+      hp, maxHp: hp,
+      vy: 2.2, vx: 0.7,    // descent ~1.5s (just after elites lock into slots); vx for in-position drift
+      fireT: 60, color: '#ffe600',
+      score: 5000,
+      stopY: 110, phase: 0, phaseT: 0,
+      vulnerable: false,
+      // Elite tank tracking
+      eliteSlots: new Array(ELITE_SLOT_COUNT).fill(null),
+      eliteReplenishT: cfg.replenishInterval, // first replenish after a full interval
+      eliteConfig: cfg
+    };
+    enemies.push(hive);
+    // Deploy initial elites immediately — they fly from the boss's spawn position
+    // (off-screen at top) toward their assigned slots. Hive is protected from arrival.
+    for (let i = 0; i < cfg.atSpawn; i++) {
+      const slot = nextEliteSlot(hive);
+      if (slot >= 0) spawnEliteTank(hive, slot);
+    }
+  }
+
+  function spawnSentinel(offsetX = 0, groupSize = 1, groupIndex = 0) {
+    // Lower HP — it's harder to land hits on a mobile target.
+    const hp = 80 + wave * 5;
+    // Deterministic phase staggering when in a group:
+    //   1 sentinel → phase 0
+    //   2 sentinels → phases 0, 1
+    //   3 sentinels → phases 0, 1, 2
+    // Each starts at its phase's beginning (phaseT = 0). This guarantees the
+    // screen always shows a spread of patterns rather than synchronized behavior.
+    const initialPhase = (groupSize > 1) ? (groupIndex % 3) : 0;
+    // If this sentinel spawns directly into phase 1 (dash), it must enter the
+    // 'dashCharging' sub-state immediately — otherwise it sits idle.
+    const startsDashing = (initialPhase === 1);
+    // Flank side: each sentinel maintains a lateral offset from the player to
+    // stay out of their direct fire stream. Even index → left flank, odd → right.
+    // Single sentinels also pick a side (default left); they may switch sides at runtime
+    // if the player is pinned to a screen edge.
+    const flankSide = (groupIndex % 2 === 0) ? -1 : 1;
+    // Color shades so multiple sentinels are visually distinguishable.
+    // Sentinel 0 = purple (signature), 1 = blue, 2 = red.
+    const sentinelColors = ['#a855ff', '#4488ff', '#ff4455'];
+    const color = sentinelColors[groupIndex % sentinelColors.length];
+    enemies.push({
+      type: 'boss', bossKind: 'sentinel',
+      x: VW / 2 + offsetX, y: -70, w: 56, h: 80,
+      hp, maxHp: hp,
+      vy: 1.2, vx: 0,
+      fireT: 30, color: color,
+      score: 5000,
+      // Sentinel descends deeper into the playfield (~40% screen height)
+      stopY: VH * 0.4,
+      // Flank side: -1 = left of player, +1 = right of player.
+      // Switches dynamically if maintaining the flank would push the boss off-screen.
+      flankSide: flankSide,
+      phase: initialPhase, phaseT: 0,
+      // Sweep state — randomize starting angle and direction for visual variety
+      sweepAngle: Math.random() * Math.PI * 2,
+      sweepDir: Math.random() < 0.5 ? -1 : 1,
+      sweepFireT: 0,
+      // Dash state (initialized for phase 1 if starting there)
+      dashCharging: startsDashing,
+      dashChargeT: 0,
+      dashing: false,
+      dashTargetX: VW / 2,
+      dashStartX: VW / 2,
+      dashTargetY: VH * 0.4,
+      dashStartY: VH * 0.4,
+      dashT: 0,
+      dashesDone: 0,      // counter: increments after each completed dash within phase 1
+      dashWaitT: 0,       // recovery timer between dashes
+      // Curtain state
+      curtainFired: false,
+      curtainBullets: []
+    });
+  }
+
+  // ============ MOTHERSHIP BOSS ============
+  // The showpiece super-boss. Three phases (turrets, laser, bullet hell).
+  // Has destructible sub-turrets that boost damage taken to the core when destroyed.
+  function spawnMothership() {
+    // Core HP scales steeper than other bosses. Strip phase (turrets) also
+    // scales with wave so the shield mechanic stays meaningful at high waves,
+    // not a trivial 1-second unlock.
+    const hp = 300 + wave * 16;
+    const turretHp = 10 + Math.floor(wave * 1.5);
+    enemies.push({
+      type: 'boss', bossKind: 'mothership',
+      x: VW / 2, y: -100, w: 140, h: 90,
+      hp, maxHp: hp,
+      vy: 1.6, vx: 0.3,        // descent speed (only y used during descent); vx for phase 2 drift
+      fireT: 50, color: '#ff3030',
+      score: 8000,
+      stopY: 90,
+      arriving: true,           // true during descent; blocks all damage to boss/turrets
+      phase: 0, phaseT: 0,
+      // 4 turrets — two outer (shoulder) and two inner (underbelly).
+      // dx/dy are offsets from boss center; hp/maxHp per-turret; fireT for cadence.
+      // Slight initial fireT randomization so turrets don't all fire in unison.
+      turrets: [
+        { dx: -50, dy: 22, hp: turretHp, maxHp: turretHp, fireT: 40 + Math.random() * 30, alive: true },
+        { dx: -22, dy: 30, hp: turretHp, maxHp: turretHp, fireT: 40 + Math.random() * 30, alive: true },
+        { dx:  22, dy: 30, hp: turretHp, maxHp: turretHp, fireT: 40 + Math.random() * 30, alive: true },
+        { dx:  50, dy: 22, hp: turretHp, maxHp: turretHp, fireT: 40 + Math.random() * 30, alive: true }
+      ],
+      // Laser state for phase 1
+      laserCharging: false,
+      laserActive: false,
+      laserX: VW / 2,          // locked x-position of the beam
+      laserT: 0,
+      // Phase 2 sweep state (combines Cruiser spread + slow rotational sweep)
+      sweepAngle: Math.PI / 2,
+      sweepDir: 1,
+      sweepFireT: 0,
+      spreadFireT: 0,
+      // Kamikaze bursts — only during phase 0. Fires immediately when phase 0
+      // begins, then every MS_KAMI_BURST_INTERVAL frames. Count scales with wave.
+      kamiBurstT: 0
+    });
+  }
+
+  // ============ BOSS UPDATE DISPATCH ============
+  function updateBoss(e) {
+    if (e.bossKind === 'hive') updateHive(e);
+    else if (e.bossKind === 'sentinel') updateSentinel(e);
+    else if (e.bossKind === 'mothership') updateMothership(e);
+    else updateCruiser(e); // default / 'cruiser'
+  }
+
+  function updateCruiser(e) {
+    // Movement: descend, then pace left-right
+    if (e.y < e.stopY) e.y += e.vy;
+    else {
+      e.x += e.vx;
+      if (e.x < 50 || e.x > VW - 50) e.vx *= -1;
+    }
+    e.phaseT++;
+    if (e.phaseT > 240) { e.phase = (e.phase + 1) % 3; e.phaseT = 0; }
+    // Firing: original 3-phase pattern
+    e.fireT--;
+    if (e.fireT <= 0 && e.y > 0 && e.y < VH - 100) {
+      if (e.phase === 0) {
+        // 5-way spread
+        for (let k = -2; k <= 2; k++) fireEBullet(e.x, e.y + 20, k * 0.8, 3);
+        e.fireT = 35;
+      } else if (e.phase === 1) {
+        // Aimed twin shots
+        const dx = player.x - e.x, dy = player.y - e.y;
+        const d = Math.hypot(dx, dy) || 1;
+        fireEBullet(e.x - 20, e.y + 20, dx / d * 4, dy / d * 4, '#ff7733');
+        fireEBullet(e.x + 20, e.y + 20, dx / d * 4, dy / d * 4, '#ff7733');
+        e.fireT = 28;
+      } else {
+        // 8-way radial
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2 + Math.PI / 2;
+          fireEBullet(e.x, e.y + 10, Math.cos(a) * 2.5, Math.sin(a) * 2.5, '#ff7733');
+        }
+        e.fireT = 70;
+      }
+    }
+  }
+
+  // ============ HIVE BOSS ============
+  // Phases (each ~5s, longer than Cruiser so the spawn cycles feel deliberate):
+  // 0: spawn 3 grunts from each vent (6 total over the phase)
+  // 1: spawn 2 kamikazes that lock onto the player
+  // 2: vulnerable window — no spawning, takes 2x damage. Vents glow.
+  // Hive minion pool selectors — wave-gated variety
+  function pickHivePhase0Minion(w) {
+    // Phase 0 = "trickle" enemies (grunt, weaver)
+    if (w <= 20) return 'grunt';
+    if (w <= 40) return (Math.random() < 0.5) ? 'grunt' : 'weaver';
+    // 41+ keeps 50/50 (weavers don't get more dangerous than this)
+    return (Math.random() < 0.5) ? 'grunt' : 'weaver';
+  }
+  function pickHivePhase1Minion(w) {
+    // Phase 1 = "body threat" enemies (kamikaze, sniper)
+    if (w <= 40) return 'kamikaze';
+    if (w <= 60) return (Math.random() < 0.5) ? 'kamikaze' : 'sniper';
+    // 61+: bias toward harder variant
+    return (Math.random() < 0.4) ? 'kamikaze' : 'sniper';
+  }
+
+  function spawnHiveMinion(hive, minionType, ventSide) {
+    const vx = hive.x + ventSide * 38;
+    const vy = hive.y + 20;
+    if (minionType === 'grunt') {
+      enemies.push({
+        type: 'grunt', x: vx, y: vy, w: 22, h: 22,
+        hp: 2, maxHp: 2,
+        vy: 1.8 + wave * 0.05, vx: ventSide * 0.4,
+        fireT: 60 + Math.random() * 60,
+        color: '#ff007a', score: 100
+      });
+    } else if (minionType === 'weaver') {
+      enemies.push({
+        type: 'weaver', x: vx, y: vy, w: 24, h: 22,
+        hp: 2, maxHp: 2,
+        vy: 0.4, vx: ventSide * 2.5,
+        fireT: WEAVER_INITIAL_DELAY, phase: Math.random() * Math.PI * 2,
+        color: '#ffe600', score: 200,
+        burstShotsLeft: 0, burstCount: weaverBurstCountForWave(wave)
+      });
+    } else if (minionType === 'kamikaze') {
+      enemies.push({
+        type: 'kamikaze', x: vx, y: vy, w: 20, h: 24,
+        hp: 1, maxHp: 1,
+        vy: kamikazeDriftSpeedForWave(wave), vx: 0, fireT: 999,
+        color: '#ff5500', score: 150,
+        locked: false, lockTimer: 30,
+        chaseSpeed: kamikazeChaseSpeedForWave(wave)
+      });
+    } else if (minionType === 'sniper') {
+      enemies.push({
+        type: 'sniper', x: vx, y: vy, w: 24, h: 26,
+        hp: 2, maxHp: 2,
+        vy: 1.0, vx: 0,
+        fireT: 70, color: '#a855ff', score: 250,
+        stopY: 80 + Math.random() * 60
+      });
+    }
+  }
+
+  function updateHive(e) {
+    // Movement: descend, then drift slowly left-right
+    if (e.y < e.stopY) {
+      e.y += e.vy;
+    } else {
+      e.x += e.vx;
+      if (e.x < 60 || e.x > VW - 60) e.vx *= -1;
+    }
+
+    // Replenish elite tanks over time (only once boss is in position)
+    if (e.y >= e.stopY && e.eliteConfig.replenishInterval > 0) {
+      e.eliteReplenishT--;
+      if (e.eliteReplenishT <= 0) {
+        for (let i = 0; i < e.eliteConfig.replenishCount; i++) {
+          const slot = nextEliteSlot(e);
+          if (slot >= 0) spawnEliteTank(e, slot);
+        }
+        e.eliteReplenishT = e.eliteConfig.replenishInterval;
+      }
+    }
+
+    e.phaseT++;
+    // Phase durations: 0=300f (5s), 1=180f (3s), 2=240f (4s vulnerable window)
+    const phaseDurations = [300, 180, 240];
+    if (e.phaseT > phaseDurations[e.phase]) {
+      e.phase = (e.phase + 1) % 3;
+      e.phaseT = 0;
+      e.vulnerable = (e.phase === 2);
+    }
+    // Spawning: timed by fireT, distinct per phase
+    e.fireT--;
+    if (e.fireT <= 0 && e.y > 0) {
+      if (e.phase === 0) {
+        // Spawn a trickle-type minion from a vent, alternating left/right
+        const vent = (Math.floor(e.phaseT / 50) % 2 === 0) ? -1 : 1;
+        spawnHiveMinion(e, pickHivePhase0Minion(wave), vent);
+        e.fireT = 50;
+      } else if (e.phase === 1) {
+        // Spawn 1 body-threat minion (alternating sides each spawn)
+        const vent = (Math.floor(e.phaseT / 80) % 2 === 0) ? -1 : 1;
+        spawnHiveMinion(e, pickHivePhase1Minion(wave), vent);
+        e.fireT = 80;
+      } else {
+        // Vulnerable phase: no spawning. Optional gentle defensive shot to remind it's alive.
+        fireEBullet(e.x, e.y + 20, 0, 3);
+        e.fireT = 60;
+      }
+    }
+  }
+
+
+  // ============ SENTINEL BOSS ============
+  // The mobile bullet-hell boss. Pursues the player laterally, with three phases:
+  //   Phase 0 (5s): rotational sweep — fires a continuous slow-bullet stream from a
+  //     center point that sweeps around like a lighthouse beam, reversing direction.
+  //   Phase 1 (variable): dash attack — brief warning glow, then accelerates toward
+  //     player's locked x-position while firing twin streams from wings.
+  //   Phase 2 (4s): bullet curtain — fires a horizontal row of 10 bullets at
+  //     intervals; row has a random gap player must spot and weave through.
+  const SENTINEL_PURSUIT_SPEED = 2.52; // ~60% of player speed (4.2)
+  // All three phases share the same duration (4s) so multi-sentinel staggering
+  // produces a clean rotating spread of patterns. Cycle = 12s total.
+  const SENTINEL_PHASE_DURATION = 240;
+  const SENTINEL_SWEEP_DURATION = SENTINEL_PHASE_DURATION;
+  const SENTINEL_PHASE1_DURATION = SENTINEL_PHASE_DURATION;
+  const SENTINEL_CURTAIN_DURATION = SENTINEL_PHASE_DURATION;
+  // Dash internals
+  const SENTINEL_DASH_CHARGE = 30;     // frames of warning before dash
+  const SENTINEL_DASH_DURATION = 24;   // frames spent dashing
+  const SENTINEL_DASH_GAP = 66;        // frames between consecutive dashes (recovery)
+  const SENTINEL_DASHES_PER_PHASE = 2; // two dashes within phase 1
+  const SENTINEL_DASH_MIN_DISTANCE = 100; // minimum dash travel distance, overshoots through player if closer
+  const SENTINEL_FLANK_DISTANCE = 100;    // lateral offset from player during sweep/curtain phases (out of fire stream)
+  const SENTINEL_CURTAIN_INTERVAL = 80;
+
+  function updateSentinel(e) {
+    const isDescending = e.y < e.stopY;
+
+    // Descent on entry — boss still falls into place but ALSO fires + drifts toward flank
+    if (isDescending) {
+      e.y += e.vy;
+      // Drift toward flank x at half speed during descent (rather than pursuing player x)
+      if (!e.dashing) {
+        let flankTargetX = player.x + e.flankSide * SENTINEL_FLANK_DISTANCE;
+        if (flankTargetX < 40 || flankTargetX > VW - 40) {
+          const otherSide = -e.flankSide;
+          const altTarget = player.x + otherSide * SENTINEL_FLANK_DISTANCE;
+          if (altTarget >= 40 && altTarget <= VW - 40) {
+            e.flankSide = otherSide;
+            flankTargetX = altTarget;
+          } else {
+            flankTargetX = Math.max(40, Math.min(VW - 40, flankTargetX));
+          }
+        }
+        const dx = flankTargetX - e.x;
+        const step = Math.min(Math.abs(dx), SENTINEL_PURSUIT_SPEED * 0.5) * Math.sign(dx);
+        e.x += step;
+        e.x = Math.max(40, Math.min(VW - 40, e.x));
+      }
+      // Sweep mechanic active during descent (only sweep — no dash/curtain yet)
+      e.sweepAngle += 0.022 * e.sweepDir;
+      e.sweepFireT--;
+      if (e.sweepFireT <= 0) {
+        const sp = 3.2;
+        const vx = Math.cos(e.sweepAngle) * sp;
+        const vy = Math.sin(e.sweepAngle) * sp;
+        fireEBullet(e.x, e.y + 10, vx, vy, e.color);
+        e.sweepFireT = 14; // slightly slower than landed fire rate
+      }
+      return;
+    }
+
+    // Movement during sweep (phase 0) and curtain (phase 2): maintain a "flank"
+    // position offset laterally from the player to stay out of their direct fire stream.
+    // During dash CHARGE and DASH itself, the boss locks in place / commits to the dash.
+    // Between/after dashes, y gradually returns to home (stopY).
+    if (!e.dashing && !e.dashCharging) {
+      // Determine flank target x. If the desired side would push the boss off
+      // the playable edge, switch sides automatically.
+      let flankTargetX = player.x + e.flankSide * SENTINEL_FLANK_DISTANCE;
+      if (flankTargetX < 40 || flankTargetX > VW - 40) {
+        // Try the other side
+        const otherSide = -e.flankSide;
+        const altTarget = player.x + otherSide * SENTINEL_FLANK_DISTANCE;
+        if (altTarget >= 40 && altTarget <= VW - 40) {
+          e.flankSide = otherSide;
+          flankTargetX = altTarget;
+        } else {
+          // Both sides out of bounds (very unlikely on 360px screen with 100px offset) — clamp
+          flankTargetX = Math.max(40, Math.min(VW - 40, flankTargetX));
+        }
+      }
+      const dx = flankTargetX - e.x;
+      const step = Math.min(Math.abs(dx), SENTINEL_PURSUIT_SPEED) * Math.sign(dx);
+      e.x += step;
+      e.x = Math.max(40, Math.min(VW - 40, e.x));
+      // Return to home y — same speed cap as lateral movement, so the rise/fall
+      // is visible but not instant. Most dashes resolve back to home in ~1-1.5s.
+      const dy = e.stopY - e.y;
+      if (Math.abs(dy) > 0.5) {
+        const ystep = Math.min(Math.abs(dy), SENTINEL_PURSUIT_SPEED) * Math.sign(dy);
+        e.y += ystep;
+      }
+    }
+
+    e.phaseT++;
+
+    // Phase logic
+    if (e.phase === 0) {
+      // ROTATIONAL SWEEP — full 360° rotation (no bounding), reverses periodically.
+      // Player above the boss is now a valid target — no more cheese from up high.
+      e.sweepAngle += 0.025 * e.sweepDir;
+      // Reverse direction every ~120 frames (2 seconds)
+      if (e.phaseT > 0 && e.phaseT % 120 === 0) e.sweepDir *= -1;
+      // Keep the angle bounded in a manageable numeric range — wrap to [0, 2*PI)
+      if (e.sweepAngle > Math.PI * 2) e.sweepAngle -= Math.PI * 2;
+      if (e.sweepAngle < 0) e.sweepAngle += Math.PI * 2;
+      // Fire along the sweep angle
+      e.sweepFireT--;
+      if (e.sweepFireT <= 0) {
+        const sp = 3.2;
+        const vx = Math.cos(e.sweepAngle) * sp;
+        const vy = Math.sin(e.sweepAngle) * sp;
+        fireEBullet(e.x, e.y + 10, vx, vy, e.color);
+        e.sweepFireT = 12;
+      }
+      // Transition to phase 1
+      if (e.phaseT >= SENTINEL_SWEEP_DURATION) {
+        e.phase = 1; e.phaseT = 0;
+        e.dashCharging = true; e.dashChargeT = 0;
+        e.dashing = false;
+        e.dashesDone = 0;
+        e.dashWaitT = 0;
+      }
+    } else if (e.phase === 1) {
+      // DASH ATTACK PHASE — two dashes within the 240-frame envelope, separated
+      // by a recovery window. Charge → dash → wait → charge → dash → cooldown.
+      if (e.dashCharging) {
+        e.dashChargeT++;
+        // Visual warning is handled in render via dashCharging flag
+        if (e.dashChargeT >= SENTINEL_DASH_CHARGE) {
+          // Lock onto player's current (x, y) and begin dashing.
+          // The dash commits in 2D — works whether player is above, below, or beside.
+          // If player is too close to dash a meaningful distance, overshoot
+          // through them in the same direction (in 2D space).
+          e.dashCharging = false;
+          e.dashing = true;
+          e.dashStartX = e.x;
+          e.dashStartY = e.y;
+          const dx = player.x - e.x;
+          const dy = player.y - e.y;
+          const dist = Math.hypot(dx, dy);
+          let tx, ty;
+          if (dist < SENTINEL_DASH_MIN_DISTANCE) {
+            // Too close — pick a direction and dash through player.
+            // Fall back to "down-and-right" if player happens to be exactly on top of the sentinel.
+            const ux = (dist > 0.01) ? dx / dist : 0.7;
+            const uy = (dist > 0.01) ? dy / dist : 0.7;
+            tx = e.x + ux * SENTINEL_DASH_MIN_DISTANCE;
+            ty = e.y + uy * SENTINEL_DASH_MIN_DISTANCE;
+          } else {
+            // Far enough — dash directly to player's position
+            tx = player.x;
+            ty = player.y;
+          }
+          // Clamp to playfield. Allow upward travel into the upper portion of
+          // the screen if the player has flown above the sentinel, but never
+          // off-screen at the top (keep some margin so the boss is always visible).
+          e.dashTargetX = Math.max(40, Math.min(VW - 40, tx));
+          e.dashTargetY = Math.max(60, Math.min(VH - 60, ty));
+          e.dashT = 0;
+        }
+      } else if (e.dashing) {
+        // Move from (startX, startY) to (targetX, targetY) over DASH_DURATION
+        // frames with an ease-out curve. The boss commits in 2D — ramming any
+        // position around the player rather than just their column.
+        e.dashT++;
+        const t = Math.min(1, e.dashT / SENTINEL_DASH_DURATION);
+        const eased = 1 - Math.pow(1 - t, 2); // ease-out quadratic
+        e.x = e.dashStartX + (e.dashTargetX - e.dashStartX) * eased;
+        e.y = e.dashStartY + (e.dashTargetY - e.dashStartY) * eased;
+        e.x = Math.max(40, Math.min(VW - 40, e.x));
+        e.y = Math.max(60, Math.min(VH - 60, e.y));
+        // Fire twin streams from wings every 4 frames while dashing
+        if (e.dashT % 4 === 0) {
+          fireEBullet(e.x - 22, e.y + 5, -0.3, 3.6, e.color);
+          fireEBullet(e.x + 22, e.y + 5, 0.3, 3.6, e.color);
+        }
+        if (e.dashT >= SENTINEL_DASH_DURATION) {
+          e.dashing = false;
+          e.dashesDone++;
+          e.dashWaitT = 0;
+        }
+      } else {
+        // Between dashes or after final dash — count toward the next event
+        e.dashWaitT++;
+        if (e.dashesDone < SENTINEL_DASHES_PER_PHASE && e.dashWaitT >= SENTINEL_DASH_GAP) {
+          // Begin next dash sequence
+          e.dashCharging = true;
+          e.dashChargeT = 0;
+        }
+      }
+      // Transition to phase 2 when the phase duration elapses
+      if (e.phaseT >= SENTINEL_PHASE1_DURATION) {
+        e.phase = 2; e.phaseT = 0;
+        e.curtainFired = false;
+        // Reset dash state for the next time we cycle back to phase 1
+        e.dashCharging = false;
+        e.dashing = false;
+        e.dashesDone = 0;
+        e.dashWaitT = 0;
+      }
+    } else {
+      // BULLET CURTAIN
+      // Fire a curtain every CURTAIN_INTERVAL frames during the phase
+      if (e.phaseT % SENTINEL_CURTAIN_INTERVAL === 1) {
+        fireCurtain(e);
+      }
+      if (e.phaseT >= SENTINEL_CURTAIN_DURATION) {
+        // Back to phase 0
+        e.phase = 0; e.phaseT = 0;
+        e.sweepAngle = Math.PI / 2;
+        e.sweepDir = (Math.random() < 0.5) ? 1 : -1;
+      }
+    }
+  }
+
+  function fireCurtain(e) {
+    // 10 bullets across the screen with one random gap
+    const count = 10;
+    const margin = 30;
+    const span = VW - margin * 2;
+    const spacing = span / (count - 1);
+    // Pick a gap position — skip one bullet in the row
+    const gapIndex = Math.floor(Math.random() * count);
+    const startY = e.y + 30;
+    for (let i = 0; i < count; i++) {
+      if (i === gapIndex) continue;
+      const px = margin + i * spacing;
+      eBullets.push({
+        x: px, y: startY,
+        vx: 0, vy: 2.2,
+        life: 240, color: e.color
+      });
+    }
+  }
+
+  // ============ MOTHERSHIP UPDATE ============
+  // Three phases (cycle ~15s total):
+  //   Phase 0 (8s): turret fire — 4 turrets independently fire aimed shots at player.
+  //                 Player can destroy individual turrets; each one down = +25% bonus damage to core.
+  //   Phase 1 (2s): laser beam — 1s charge with vertical red warning line, then 1s 20px-wide beam.
+  //                 One-hit-then-fades: if player gets clipped, they lose a ship and beam stops doing damage.
+  //   Phase 2 (5s): bullet hell — slow lateral drift + 5-way spread + rotational sweep simultaneously.
+  const MS_PHASE0_DURATION = 480; // 8s
+  const MS_LASER_CHARGE = 60;     // 1s warning
+  const MS_LASER_FIRE = 60;       // 1s beam
+  const MS_PHASE2_DURATION = 300; // 5s
+  const MS_LASER_WIDTH = 20;      // half-width is 10px each side of center
+  // Kamikaze bursts: phase 0 fires a burst immediately at phase entry, then
+  // every MS_KAMI_BURST_INTERVAL frames. Count per burst scales with wave.
+  const MS_KAMI_BURST_INTERVAL = 120; // 2 seconds between bursts
+
+  // Binary vulnerability: core takes damage ONLY when all 4 turrets are destroyed.
+  // Turrets restore at full HP each time phase 0 starts again, so each cycle the
+  // player must re-strip the shield before damaging the core.
+  function mothershipCoreVulnerable(ms) {
+    for (const t of ms.turrets) if (t.alive) return false;
+    return true;
+  }
+
+  // Restore all turrets to alive+full-HP. Called when phase 0 begins (including the
+  // first time, though spawnMothership already sets them up; this is for repeat cycles).
+  function mothershipRestoreTurrets(ms) {
+    for (const t of ms.turrets) {
+      t.alive = true;
+      t.hp = t.maxHp;
+      t.fireT = 30 + Math.random() * 30;
+    }
+  }
+
+  // Wave-scaled count of kamikazes per phase-0 burst.
+  function mothershipKamikazeBurstCount(w) {
+    if (w <= 20) return 2;
+    if (w <= 40) return 3;
+    if (w <= 60) return 4;
+    if (w <= 80) return 5;
+    return 6;
+  }
+
+  // Spawn positions for a burst, relative to boss center. Offsets are wide so
+  // kamikazes emerge OUTSIDE the player's typical bullet fan when they're firing
+  // up at turrets. Boss is fixed at VW/2 during phase 0/1 (bursts only fire then),
+  // so a max offset of ±140 keeps spawns within the 360-wide playfield.
+  function mothershipKamikazeOffsets(count) {
+    switch (count) {
+      case 2: return [-110, 110];
+      case 3: return [-120, 0, 120];
+      case 4: return [-130, -100, 100, 130];
+      case 5: return [-130, -100, 0, 100, 130];
+      case 6: return [-140, -110, -80, 80, 110, 140];
+      default: return [-110, 110];
+    }
+  }
+
+  function fireMothershipKamikazeBurst(e) {
+    const count = mothershipKamikazeBurstCount(wave);
+    const offsets = mothershipKamikazeOffsets(count);
+    const drift = kamikazeDriftSpeedForWave(wave);
+    const chase = kamikazeChaseSpeedForWave(wave);
+    for (const dx of offsets) {
+      const driftX = Math.sign(dx) * 0.4; // brief outward drift before locking
+      // Defensive clamp: keep spawn within playable area even if boss is off-center
+      const spawnX = Math.max(25, Math.min(VW - 25, e.x + dx));
+      enemies.push({
+        type: 'kamikaze',
+        x: spawnX, y: e.y + 18,
+        w: 20, h: 24, hp: 1, maxHp: 1,
+        vy: drift, vx: driftX,
+        fireT: 999,
+        color: '#ff5500', score: 150,
+        locked: false, lockTimer: 30,
+        chaseSpeed: chase
+      });
+    }
+  }
+
+  function updateMothership(e) {
+    // Descent — boss falls into position. Turrets are invulnerable during arrival
+    // so the player can't strip the shield mid-entry (collision damage to player
+    // still applies though — the body is physically present).
+    if (e.y < e.stopY) {
+      e.y += e.vy;
+      // If descent completed this frame, clear the arriving flag
+      if (e.y >= e.stopY) {
+        e.arriving = false;
+      }
+      return;
+    }
+
+    e.phaseT++;
+
+    // Lateral drift only during phase 2
+    if (e.phase === 2) {
+      e.x += e.vx;
+      if (e.x < 70 || e.x > VW - 70) e.vx *= -1;
+    }
+
+    // KAMIKAZE BURSTS — phases 0 and 1. Skipped during phase 2 (bullet hell is
+    // saturated already). Burst count scales with wave; speed scales with wave too.
+    // First burst fires immediately on phase 0 entry (kamiBurstT reset to 0).
+    if (e.phase === 0 || e.phase === 1) {
+      if (e.kamiBurstT <= 0) {
+        fireMothershipKamikazeBurst(e);
+        e.kamiBurstT = MS_KAMI_BURST_INTERVAL;
+      } else {
+        e.kamiBurstT--;
+      }
+    }
+
+    if (e.phase === 0) {
+      // TURRET FIRE — each alive turret fires aimed shots independently
+      for (const t of e.turrets) {
+        if (!t.alive) continue;
+        t.fireT--;
+        if (t.fireT <= 0) {
+          const tx = e.x + t.dx;
+          const ty = e.y + t.dy;
+          const dx = player.x - tx;
+          const dy = player.y - ty;
+          const d = Math.hypot(dx, dy) || 1;
+          const sp = 3.6;
+          fireEBullet(tx, ty + 6, dx / d * sp, dy / d * sp, '#ff8866');
+          t.fireT = 55 + Math.random() * 20; // ~1s cadence per turret
+        }
+      }
+      if (e.phaseT >= MS_PHASE0_DURATION) {
+        e.phase = 1; e.phaseT = 0;
+        e.laserCharging = true;
+        e.laserActive = false;
+        e.laserT = 0;
+        // Lock the laser x to the boss's current x at the moment phase 1 starts.
+        // The boss doesn't move much in phases 0/1, so this represents "boss aims down at where it is."
+        e.laserX = e.x;
+      }
+    } else if (e.phase === 1) {
+      // LASER PHASE — charge then fire
+      if (e.laserCharging) {
+        e.laserT++;
+        // During charge, the laserX could re-lock as a slight challenge — but spec says lock at phase start
+        if (e.laserT >= MS_LASER_CHARGE) {
+          e.laserCharging = false;
+          e.laserActive = true;
+          e.laserT = 0;
+          SFX.boss(); // beam fire sound
+        }
+      } else if (e.laserActive) {
+        e.laserT++;
+        // Beam damage: if player is in the beam's x-band, hit them once.
+        const inBeam = Math.abs(player.x - e.laserX) < MS_LASER_WIDTH / 2;
+        // Player must be below the beam origin (the beam shoots downward from boss)
+        const beamOriginY = e.y + 35;
+        if (inBeam && player.y > beamOriginY && player.invuln <= 0) {
+          hitPlayer();
+          // Disable further damage from this beam (one-hit-then-fades semantics)
+          e.laserActive = false;
+        }
+        if (e.laserT >= MS_LASER_FIRE) {
+          // End of beam — move to phase 2
+          e.laserActive = false;
+          e.phase = 2; e.phaseT = 0;
+        }
+      } else {
+        // Beam already consumed (player got hit) — wait out the rest of the beam window then transition
+        e.laserT++;
+        if (e.laserT >= MS_LASER_FIRE) {
+          e.phase = 2; e.phaseT = 0;
+        }
+      }
+    } else {
+      // BULLET HELL — 5-way spread + slow rotating sweep simultaneously
+      e.spreadFireT--;
+      if (e.spreadFireT <= 0) {
+        for (let k = -2; k <= 2; k++) {
+          fireEBullet(e.x, e.y + 25, k * 0.8, 2.8, '#ff5555');
+        }
+        e.spreadFireT = 50;
+      }
+      e.sweepAngle += 0.02 * e.sweepDir;
+      // Reverse every 90 frames (1.5s)
+      if (e.phaseT % 90 === 0 && e.phaseT > 0) e.sweepDir *= -1;
+      // Wrap angle
+      if (e.sweepAngle > Math.PI * 2) e.sweepAngle -= Math.PI * 2;
+      if (e.sweepAngle < 0) e.sweepAngle += Math.PI * 2;
+      e.sweepFireT--;
+      if (e.sweepFireT <= 0) {
+        const sp = 2.6;
+        const vx = Math.cos(e.sweepAngle) * sp;
+        const vy = Math.sin(e.sweepAngle) * sp;
+        fireEBullet(e.x, e.y + 25, vx, vy, '#ff5555');
+        e.sweepFireT = 18;
+      }
+      if (e.phaseT >= MS_PHASE2_DURATION) {
+        e.phase = 0; e.phaseT = 0;
+        // Restore all turrets to full HP at the start of each new phase 0 cycle.
+        // The core was vulnerable; now the shield is back and the player must
+        // re-strip the turrets to expose it again.
+        const wasVulnerable = mothershipCoreVulnerable(e);
+        mothershipRestoreTurrets(e);
+        // Fire a kamikaze burst immediately as phase 0 begins again
+        e.kamiBurstT = 0;
+        if (wasVulnerable) {
+          // Visual: brief flash at the boss to signal shield is back
+          floatText(e.x, e.y - 10, 'SHIELD RESTORED', '#00f0ff');
+          for (let k = 0; k < 12; k++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = Math.random() * 2 + 1;
+            particles.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 30, max: 35, color: '#00f0ff', size: 2 });
+          }
+        }
+      }
+    }
   }
 
   function pickEnemyType() {
+    // Weighted pick from the wave's enemy pool
+    const pool = enemyPoolForWave(wave);
     const r = Math.random();
-    if (wave < 2) return 'grunt';
-    if (wave < 3) return r < 0.7 ? 'grunt' : 'weaver';
-    if (wave < 4) {
-      if (r < 0.55) return 'grunt';
-      if (r < 0.8) return 'weaver';
-      return 'kamikaze';
+    let cumulative = 0;
+    for (const [type, weight] of Object.entries(pool)) {
+      cumulative += weight;
+      if (r < cumulative) return type;
     }
-    if (wave < 6) {
-      if (r < 0.4) return 'grunt';
-      if (r < 0.65) return 'weaver';
-      if (r < 0.85) return 'kamikaze';
-      return 'tank';
+    return 'grunt'; // fallback
+  }
+
+  // Sector-end check: call after a boss dies. If we just cleared a wave that
+  // ends a sector (every 20 waves: 20, 40, 60, ...), start the break scene.
+  function onBossCleared() {
+    bossActive = false;
+    // When the Hive dies, surviving elite tanks self-destruct.
+    // They were deployed by the boss; without it they shut down.
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.type === 'eliteTank') {
+        explode(e.x, e.y, e.color, true);
+        SFX.explode();
+        // Clear slot reference if hiveRef still exists
+        if (e.hiveRef && e.hiveRef.eliteSlots) {
+          e.hiveRef.eliteSlots[e.slotIdx] = null;
+        }
+        enemies.splice(i, 1);
+      }
     }
-    if (r < 0.3) return 'grunt';
-    if (r < 0.5) return 'weaver';
-    if (r < 0.7) return 'kamikaze';
-    if (r < 0.85) return 'sniper';
-    return 'tank';
+    if (wave > 0 && wave % 20 === 0) {
+      startBreakScene();
+    } else {
+      setBgmMode('combat');
+    }
+  }
+
+  function startBreakScene() {
+    state = STATE.BREAK;
+    stopBgm();
+    const sectorJustCleared = wave / 20;
+    breakState = {
+      phase: 'cleared',     // 'cleared' (3s) -> 'quiet' (2s) -> 'incoming' (2s) -> resume
+      timer: 0,
+      sectorJustCleared,
+      sectorScoreAtStart: score,
+      // Capture the old (just-cleared) and new (incoming) sector themes so the
+      // background can morph smoothly between them during the break instead of
+      // snapping when the wave counter ticks over to the next sector.
+      oldTheme: sectorThemeForWave(wave),
+      newTheme: sectorThemeForWave(wave + 1)
+    };
+    // Play a brief victory fanfare (sfx, not bgm)
+    SFX.extraLife();
+    // Auto-destroy any remaining enemies on screen so the break scene is clean.
+    // Award score for these "mop-up" kills since the player earned the sector clear.
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      explode(e.x, e.y, e.color, e.type === 'tank' || e.type === 'eliteTank' || e.type === 'boss');
+      if (e.score) score += e.score;
+      // Update kill stats by type if applicable
+      if (stats && stats.kills && e.type && stats.kills[e.type] !== undefined) {
+        stats.kills[e.type]++;
+      }
+      enemies.splice(i, 1);
+    }
+    // Auto-collect any remaining powerups (player earned them).
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      collectPowerup(powerups[i]);
+      powerups.splice(i, 1);
+    }
+    // Clear lingering enemy bullets too (so the next sector begins on a clean slate)
+    eBullets.length = 0;
+    // Heal all wingmen
+    for (const w of wingmen) {
+      if (w.hp < w.maxHp) {
+        for (let k = 0; k < 6; k++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = Math.random() * 1.5 + 0.5;
+          particles.push({ x: w.x, y: w.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 30, max: 35, color: '#00ff88', size: 2 });
+        }
+        w.hp = w.maxHp;
+      }
+    }
+  }
+
+  // ~7 seconds total: 3s cleared, 2s quiet, 2s incoming
+  const BREAK_CLEARED_FRAMES = 180;
+  const BREAK_QUIET_FRAMES   = 120;
+  const BREAK_INCOMING_FRAMES = 120;
+
+  function updateBreakScene() {
+    if (!breakState) { state = STATE.PLAY; return; }
+    breakState.timer++;
+    // Allow movement but no firing/spawns
+    const { mx, my } = readInput();
+    player.x += mx * player.speed;
+    player.y += my * player.speed;
+    player.x = Math.max(14, Math.min(VW - 14, player.x));
+    player.y = Math.max(20, Math.min(VH - 20, player.y));
+    player.thruster = (mx !== 0 || my !== 0) ? Math.min(player.thruster + 0.2, 1) : Math.max(player.thruster - 0.1, 0.4);
+    if (player.invuln > 0) player.invuln--;
+    // Wingmen still follow
+    for (const w of wingmen) {
+      const slot = WINGMAN_SLOTS[w.slot];
+      const tx = player.x + slot.dx;
+      const ty = player.y + slot.dy;
+      w.x += (tx - w.x) * 0.18;
+      w.y += (ty - w.y) * 0.18;
+      w.x = Math.max(10, Math.min(VW - 10, w.x));
+      w.y = Math.max(20, Math.min(VH - 10, w.y));
+      if (w.spawnAnim > 0) w.spawnAnim--;
+      if (w.hitFlash > 0) w.hitFlash--;
+    }
+    // Let any lingering bullets fly off-screen naturally — looks weird if they freeze.
+    // No collision checks during the break; they just travel and despawn.
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if (b.life <= 0 || b.y < -10 || b.y > VH + 10 || b.x < -10 || b.x > VW + 10) bullets.splice(i, 1);
+    }
+    for (let i = eBullets.length - 1; i >= 0; i--) {
+      const b = eBullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if (b.life <= 0 || b.y > VH + 10 || b.y < -10 || b.x < -10 || b.x > VW + 10) eBullets.splice(i, 1);
+    }
+    // Stars scroll faster during 'quiet' for warp-jump feel
+    let starBoost = 1;
+    if (breakState.phase === 'quiet') starBoost = 3;
+    for (const s of stars) {
+      s.y += s.v * starBoost;
+      if (s.y > VH) { s.y = -2; s.x = Math.random() * VW; }
+    }
+    // Update remaining particles & float texts
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.95; p.vy *= 0.95;
+      p.life--;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    for (let i = floatTexts.length - 1; i >= 0; i--) {
+      const f = floatTexts[i];
+      f.y -= 0.6; f.life--;
+      if (f.life <= 0) floatTexts.splice(i, 1);
+    }
+    // Phase transitions
+    if (breakState.phase === 'cleared' && breakState.timer > BREAK_CLEARED_FRAMES) {
+      breakState.phase = 'quiet';
+      breakState.timer = 0;
+    } else if (breakState.phase === 'quiet' && breakState.timer > BREAK_QUIET_FRAMES) {
+      breakState.phase = 'incoming';
+      breakState.timer = 0;
+      SFX.wave(); // signals new sector
+    } else if (breakState.phase === 'incoming' && breakState.timer > BREAK_INCOMING_FRAMES) {
+      // End of break — resume play in the NEW sector.
+      // The break narratively IS the wave 20→21 (or 40→41 etc.) transition,
+      // so increment the wave now. Without this, we'd snap back to the just-
+      // cleared sector's theme for ~10s until the wave timer finally ticked.
+      wave++;
+      waveTimer = 0;
+      updateHUD();
+      breakState = null;
+      state = STATE.PLAY;
+      if (bgmOn) startBgm('combat');
+    }
   }
 
   function spawnWingman() {
@@ -940,7 +2300,50 @@
       const e = enemies[i];
       const d = Math.hypot(e.x - player.x, e.y - player.y);
       if (d < 180) {
-        const dmg = Math.max(2, Math.floor(8 - d / 30));
+        let dmg = Math.max(2, Math.floor(8 - d / 30));
+        // Hive in its vulnerable phase takes double damage
+        if (e.bossKind === 'hive' && e.vulnerable) dmg *= 2;
+        // Mothership: redirect damage to turrets while shielded. The burst can
+        // strip the shield turret-by-turret if you blast it from close range.
+        // Only deals body damage when the core is exposed.
+        // During arrival, the boss is fully invulnerable — burst is a no-op.
+        if (e.bossKind === 'mothership' && e.arriving) {
+          explode(e.x, e.y, '#ffe680', false);
+          continue;
+        }
+        if (e.bossKind === 'mothership' && !mothershipCoreVulnerable(e)) {
+          // Spread damage across surviving turrets (closest first)
+          let remaining = dmg;
+          // Sort alive turrets by distance to player
+          const alive = e.turrets.filter(t => t.alive)
+            .map(t => ({ t, d: Math.hypot(e.x + t.dx - player.x, e.y + t.dy - player.y) }))
+            .sort((a, b) => a.d - b.d);
+          for (const { t } of alive) {
+            if (remaining <= 0) break;
+            const tDmg = Math.min(remaining, t.hp);
+            t.hp -= tDmg;
+            score += tDmg;
+            remaining -= tDmg;
+            if (t.hp <= 0) {
+              t.alive = false;
+              explode(e.x + t.dx, e.y + t.dy, '#ffaa66', true);
+              floatText(e.x + t.dx, e.y + t.dy, 'TURRET DOWN', '#ffaa66');
+              score += 250;
+              if (mothershipCoreVulnerable(e)) {
+                floatText(e.x, e.y - 30, 'CORE EXPOSED', '#00f0ff');
+                SFX.powerup();
+                HAPTIC.boss();
+                for (let k = 0; k < 20; k++) {
+                  const a = Math.random() * Math.PI * 2;
+                  const sp = Math.random() * 3 + 1.5;
+                  particles.push({ x: e.x, y: e.y - 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 40, max: 45, color: '#00f0ff', size: 2 });
+                }
+              }
+            }
+          }
+          explode(e.x, e.y, '#ffaa66', false);
+          continue; // skip core damage entirely
+        }
         const dmgApplied = Math.min(dmg, Math.max(0, e.hp));
         e.hp -= dmg;
         if (e.type === 'boss' && dmgApplied > 0) score += dmgApplied;
@@ -953,10 +2356,18 @@
           if (e.type === 'boss') {
             SFX.bigExplode();
             HAPTIC.boss();
-            bossActive = false;
-            setBgmMode('combat');
             powerups.push({ type: 'power', x: e.x - 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
-            powerups.push({ type: 'life', x: e.x + 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
+            // Only the last boss in a group gives the 1UP drop and triggers the cleared logic.
+            // Otherwise a 3-sentinel wave would give 3 free lives.
+            const isLastBoss = !enemies.some(o => o !== e && o.type === 'boss');
+            if (isLastBoss) {
+              powerups.push({ type: 'life', x: e.x + 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
+              onBossCleared();
+            }
+          }
+          // When an elite tank dies, free its slot on the parent Hive
+          if (e.type === 'eliteTank' && e.hiveRef) {
+            e.hiveRef.eliteSlots[e.slotIdx] = null;
           }
           enemies.splice(i, 1);
         }
@@ -995,7 +2406,7 @@
       SFX.shootHeavy();
     } else if (powerLevel === 5) {
       player.cooldown = 4;
-      fireBullet(px, py, 0, -10, c, 2);
+      fireBullet(px, py, 0, -10, '#ffcc44', 2);
       fireBullet(px - 6, py, -0.5, -9.5, c);
       fireBullet(px + 6, py, 0.5, -9.5, c);
       fireBullet(px - 12, py + 2, -2, -9, c);
@@ -1008,8 +2419,8 @@
     } else {
       player.cooldown = 3;
       fireBullet(px, py, 0, -10.5, '#ff8800', 3);
-      fireBullet(px - 5, py, -0.4, -10, c, 2);
-      fireBullet(px + 5, py, 0.4, -10, c, 2);
+      fireBullet(px - 5, py, -0.4, -10, '#ffcc44', 2);
+      fireBullet(px + 5, py, 0.4, -10, '#ffcc44', 2);
       fireBullet(px - 11, py + 2, -1.8, -9.5, c);
       fireBullet(px + 11, py + 2, 1.8, -9.5, c);
       fireBullet(px - 14, py + 4, -5, -2, '#ff007a');
@@ -1033,6 +2444,7 @@
 
   function update() {
     time++;
+    if (state === STATE.BREAK) { updateBreakScene(); return; }
     if (state !== STATE.PLAY) return;
     const { mx, my, fire } = readInput();
 
@@ -1118,19 +2530,32 @@
         if (e.lockTimer <= 0 && !e.locked) {
           const dx = player.x - e.x, dy = player.y - e.y;
           const d = Math.hypot(dx, dy) || 1;
-          e.vx = dx / d * 3.5;
-          e.vy = dy / d * 3.5;
+          const sp = e.chaseSpeed || 3.5; // fallback for entities without stored chase speed
+          e.vx = dx / d * sp;
+          e.vy = dy / d * sp;
           e.locked = true;
         }
         e.x += e.vx; e.y += e.vy;
       } else if (e.type === 'boss') {
-        if (e.y < e.stopY) e.y += e.vy;
-        else {
-          e.x += e.vx;
-          if (e.x < 50 || e.x > VW - 50) e.vx *= -1;
+        updateBoss(e);
+      } else if (e.type === 'eliteTank') {
+        // Fly from boss vent to assigned slot, then stop and fire like a tank
+        if (!e.arrived) {
+          e.arrivalT++;
+          // Smooth-ish travel: ~30 frames to reach the slot
+          const t = Math.min(1, e.arrivalT / 30);
+          const eased = 1 - Math.pow(1 - t, 2); // ease-out
+          // Linear interpolation from current toward target; recompute fresh each frame
+          // (use a "lerp toward target with diminishing step" so it stays simple)
+          e.x += (e.targetX - e.x) * 0.18;
+          e.y += (e.targetY - e.y) * 0.18;
+          if (Math.abs(e.x - e.targetX) < 1 && Math.abs(e.y - e.targetY) < 1) {
+            e.x = e.targetX;
+            e.y = e.targetY;
+            e.arrived = true;
+          }
         }
-        e.phaseT++;
-        if (e.phaseT > 240) { e.phase = (e.phase + 1) % 3; e.phaseT = 0; }
+        // Stationary once arrived — no movement
       } else {
         e.x += e.vx; e.y += e.vy;
       }
@@ -1140,39 +2565,50 @@
           fireEBullet(e.x, e.y + 12, 0, 3.5);
           e.fireT = 90 + Math.random() * 60;
         } else if (e.type === 'weaver') {
+          // Burst-fire state machine: fire one bullet, decrement burstShotsLeft.
+          // If burst still has shots, schedule the next inter-bullet shot soon.
+          // If burst depleted, set a cooldown that brings the total cycle to
+          // WEAVER_BURST_CYCLE frames, then refill the burst counter.
+          if (e.burstShotsLeft <= 0) {
+            // Starting a fresh burst — refill the counter
+            e.burstShotsLeft = e.burstCount || weaverBurstCountForWave(wave);
+          }
           fireEBullet(e.x, e.y + 12, 0, 3.8);
-          e.fireT = 80;
+          e.burstShotsLeft--;
+          if (e.burstShotsLeft > 0) {
+            e.fireT = WEAVER_INTER_BULLET; // next bullet in the burst
+          } else {
+            // Burst complete — cooldown so that total cycle equals WEAVER_BURST_CYCLE.
+            // Cycle includes (burstCount-1) inter-bullet intervals + the cooldown.
+            const burstSpan = (e.burstCount - 1) * WEAVER_INTER_BULLET;
+            e.fireT = Math.max(20, WEAVER_BURST_CYCLE - burstSpan);
+          }
         } else if (e.type === 'tank') {
           fireEBullet(e.x, e.y + 14, 0, 3.5);
           fireEBullet(e.x, e.y + 14, -1.2, 3.2);
           fireEBullet(e.x, e.y + 14, 1.2, 3.2);
           e.fireT = 75;
+        } else if (e.type === 'eliteTank') {
+          // Same 3-way spread as regular tank, only after arriving at slot
+          if (e.arrived) {
+            fireEBullet(e.x, e.y + 14, 0, 3.5);
+            fireEBullet(e.x, e.y + 14, -1.2, 3.2);
+            fireEBullet(e.x, e.y + 14, 1.2, 3.2);
+            e.fireT = 75;
+          } else {
+            // Reset timer briefly while in flight so we don't insta-fire on arrival
+            e.fireT = 20;
+          }
         } else if (e.type === 'sniper') {
           const dx = player.x - e.x, dy = player.y - e.y;
           const d = Math.hypot(dx, dy) || 1;
-          const sp = 4.5;
+          const sp = sniperBulletSpeedForWave(wave);
           fireEBullet(e.x, e.y + 10, dx / d * sp, dy / d * sp, '#a855ff');
           e.fireT = 100;
-        } else if (e.type === 'boss') {
-          if (e.phase === 0) {
-            for (let k = -2; k <= 2; k++) fireEBullet(e.x, e.y + 20, k * 0.8, 3);
-            e.fireT = 35;
-          } else if (e.phase === 1) {
-            const dx = player.x - e.x, dy = player.y - e.y;
-            const d = Math.hypot(dx, dy) || 1;
-            fireEBullet(e.x - 20, e.y + 20, dx / d * 4, dy / d * 4, '#ff007a');
-            fireEBullet(e.x + 20, e.y + 20, dx / d * 4, dy / d * 4, '#ff007a');
-            e.fireT = 28;
-          } else {
-            for (let k = 0; k < 8; k++) {
-              const a = (k / 8) * Math.PI * 2 + Math.PI / 2;
-              fireEBullet(e.x, e.y + 10, Math.cos(a) * 2.5, Math.sin(a) * 2.5, '#a855ff');
-            }
-            e.fireT = 70;
-          }
         }
+        // boss firing is handled in updateBoss
       }
-      if (e.type !== 'boss' && (e.y > VH + 30 || e.x < -50 || e.x > VW + 50)) enemies.splice(i, 1);
+      if (e.type !== 'boss' && e.type !== 'eliteTank' && (e.y > VH + 30 || e.x < -50 || e.x > VW + 50)) enemies.splice(i, 1);
     }
 
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -1180,10 +2616,100 @@
       let hit = false;
       for (let j = enemies.length - 1; j >= 0; j--) {
         const e = enemies[j];
+        // ============ MOTHERSHIP TURRET HIT ============
+        // If hitting a Mothership, check turrets first — they intercept bullets.
+        // Turret hit boxes are 22x22 around the turret position.
+        if (e.bossKind === 'mothership' && e.turrets) {
+          let turretHit = null;
+          let turretHitIdx = -1;
+          // Body's bottom edge in world coordinates
+          const bodyBottom = e.y + e.h / 2;
+          for (let ti = 0; ti < e.turrets.length; ti++) {
+            const t = e.turrets[ti];
+            if (!t.alive) continue;
+            const tx = e.x + t.dx;
+            const ty = e.y + t.dy;
+            // Horizontal: standard ±11px window around the turret center.
+            // Vertical: extend the turret's "channel" DOWN to the body's bottom edge.
+            // Otherwise bullets travelling upward from below would hit the body
+            // hitbox first (which extends below the turret) and be consumed before
+            // reaching the turret. The asymmetric range lets bullets in a turret's
+            // x-column reliably register on the turret instead of the body.
+            if (Math.abs(b.x - tx) < 11 && b.y > ty - 11 && b.y < bodyBottom) {
+              turretHit = t;
+              turretHitIdx = ti;
+              break;
+            }
+          }
+          if (turretHit) {
+            // During arrival the boss is shielded entirely — bullets spark off.
+            if (e.arriving) {
+              hit = true;
+              if (stats) stats.bulletsHit++;
+              for (let k = 0; k < 3; k++) {
+                const a = Math.random() * Math.PI * 2;
+                const sp = Math.random() * 1.2 + 0.4;
+                particles.push({ x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 10, max: 12, color: '#ffe680', size: 1 });
+              }
+              break; // bullet consumed
+            }
+            // DEBUG: record which turret was hit
+            if (DEBUG_MOTHERSHIP_TURRETS) {
+              dbgLastTurretHit = turretHitIdx;
+              dbgLastTurretHitT = 60;
+            }
+            const dmgApplied = Math.min(b.dmg, Math.max(0, turretHit.hp));
+            turretHit.hp -= b.dmg;
+            hit = true;
+            if (stats) stats.bulletsHit++;
+            if (dmgApplied > 0) score += dmgApplied;
+            explode(b.x, b.y, '#ffaa66', false);
+            if (turretHit.hp <= 0) {
+              turretHit.alive = false;
+              // Small explosion at the turret position
+              explode(e.x + turretHit.dx, e.y + turretHit.dy, '#ffaa66', true);
+              SFX.explode();
+              HAPTIC.bigEnemy();
+              floatText(e.x + turretHit.dx, e.y + turretHit.dy, 'TURRET DOWN', '#ffaa66');
+              score += 250;
+              // If this kill exposed the core (all 4 turrets now down), make a moment of it.
+              if (mothershipCoreVulnerable(e)) {
+                floatText(e.x, e.y - 30, 'CORE EXPOSED', '#00f0ff');
+                SFX.powerup();
+                HAPTIC.boss();
+                // Cyan flash particle burst around the core
+                for (let k = 0; k < 20; k++) {
+                  const a = Math.random() * Math.PI * 2;
+                  const sp = Math.random() * 3 + 1.5;
+                  particles.push({ x: e.x, y: e.y - 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 40, max: 45, color: '#00f0ff', size: 2 });
+                }
+              }
+            }
+            break; // bullet consumed by turret
+          }
+        }
         if (Math.abs(b.x - e.x) < e.w / 2 && Math.abs(b.y - e.y) < e.h / 2) {
+          // Mothership: core is invulnerable while any turret remains. Bullets
+          // visibly spark off and are consumed without damaging the core.
+          if (e.bossKind === 'mothership' && !mothershipCoreVulnerable(e)) {
+            hit = true;
+            if (stats) stats.bulletsHit++; // bullet still "hit" something visually
+            // Spark bounce: small white-yellow particles, no explosion
+            for (let k = 0; k < 3; k++) {
+              const a = Math.random() * Math.PI * 2;
+              const sp = Math.random() * 1.2 + 0.4;
+              particles.push({ x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 10, max: 12, color: '#ffe680', size: 1 });
+            }
+            break; // bullet consumed
+          }
+          // Damage multipliers
+          let dmgMult = 1;
+          // Hive in its vulnerable phase takes double damage
+          if (e.bossKind === 'hive' && e.vulnerable) dmgMult *= 2;
+          const actualDmg = b.dmg * dmgMult;
           // For score: only count damage actually applied (cap at remaining HP).
-          const dmgApplied = Math.min(b.dmg, Math.max(0, e.hp));
-          e.hp -= b.dmg;
+          const dmgApplied = Math.min(actualDmg, Math.max(0, e.hp));
+          e.hp -= actualDmg;
           hit = true;
           if (stats) stats.bulletsHit++;
           // +1 score per HP of damage dealt to bosses
@@ -1197,16 +2723,23 @@
             if (e.type === 'boss') {
               SFX.bigExplode();
               HAPTIC.boss();
-              bossActive = false;
-              setBgmMode('combat');
               floatText(e.x, e.y, '+' + e.score, '#ffe600');
               powerups.push({ type: 'power', x: e.x - 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
-              powerups.push({ type: 'life', x: e.x + 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
+              // Only the last boss in a group gives the 1UP and triggers the cleared logic.
+              const isLastBoss = !enemies.some(o => o !== e && o.type === 'boss');
+              if (isLastBoss) {
+                powerups.push({ type: 'life', x: e.x + 20, y: e.y, vy: 1.0, w: 16, h: 16, t: 0 });
+                onBossCleared();
+              }
             } else {
               SFX.explode();
               // Bigger haptic for tougher enemies
-              if (e.type === 'tank' || e.type === 'sniper') HAPTIC.bigEnemy();
+              if (e.type === 'tank' || e.type === 'sniper' || e.type === 'eliteTank') HAPTIC.bigEnemy();
               else HAPTIC.enemy();
+              // When an elite tank dies, free its slot on the parent Hive
+              if (e.type === 'eliteTank' && e.hiveRef) {
+                e.hiveRef.eliteSlots[e.slotIdx] = null;
+              }
               const r = Math.random();
               if (r < 0.02) {
                 powerups.push({ type: 'life', x: e.x, y: e.y, vy: 1.2, w: 16, h: 16, t: 0 });
@@ -1306,60 +2839,8 @@
       const p = powerups[i];
       p.y += p.vy; p.t++;
       if (Math.abs(p.x - player.x) < 16 && Math.abs(p.y - player.y) < 16) {
-        if (p.type === 'life') {
-          lives++;
-          SFX.extraLife();
-          HAPTIC.life();
-          floatText(p.x, p.y - 10, '1UP', '#00ff88');
-          score += 100;
-        } else {
-          if (powerLevel < 6) {
-            powerLevel++;
-            if (powerLevel > highestPowerLevel) highestPowerLevel = powerLevel;
-            SFX.powerup();
-            HAPTIC.powerup();
-            floatText(p.x, p.y - 10, powerLevel === 6 ? 'MAX!' : 'POWER UP', '#ffe600');
-            score += 50;
-          } else if (wingmen.length < MAX_WINGMEN) {
-            // At max tier: spawn a wingman in the next formation slot
-            spawnWingman();
-            SFX.powerup();
-            HAPTIC.powerup();
-            floatText(p.x, p.y - 10, 'WINGMAN!', '#00ff88');
-            score += 200;
-          } else {
-            // Max tier + 6 wingmen: heal the most-damaged wingman, if any
-            let target = null;
-            let lowestHp = 999;
-            for (const w of wingmen) {
-              if (w.hp < w.maxHp && w.hp < lowestHp) {
-                lowestHp = w.hp;
-                target = w;
-              }
-            }
-            if (target) {
-              target.hp++;
-              SFX.powerup();
-              HAPTIC.powerup();
-              // Green heal spark — particle burst at the wingman
-              for (let k = 0; k < 8; k++) {
-                const a = Math.random() * Math.PI * 2;
-                const sp = Math.random() * 1.5 + 0.5;
-                particles.push({ x: target.x, y: target.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 25, max: 30, color: '#00ff88', size: 2 });
-              }
-              floatText(target.x, target.y - 14, '+HP', '#00ff88');
-              score += 100;
-            } else {
-              // Truly maxed: overflow to score
-              score += 500;
-              SFX.powerup();
-              HAPTIC.powerup();
-              floatText(p.x, p.y - 10, '+500', '#ffe600');
-            }
-          }
-        }
+        collectPowerup(p);
         powerups.splice(i, 1);
-        updateHUD();
         continue;
       }
       if (p.y > VH + 20) powerups.splice(i, 1);
@@ -1387,7 +2868,7 @@
         spawnEnemy();
         lastSpawn = 0;
       }
-      if (waveTimer > 600) {
+      if (waveTimer > waveDurationForWave(wave)) {
         wave++;
         waveTimer = 0;
         SFX.wave();
@@ -1460,8 +2941,10 @@
     document.getElementById('kill-kamikaze').textContent = k.kamikaze;
     document.getElementById('kill-tank').textContent = k.tank;
     document.getElementById('kill-sniper').textContent = k.sniper;
+    const eliteEl = document.getElementById('kill-elite');
+    if (eliteEl) eliteEl.textContent = k.eliteTank;
     document.getElementById('kill-boss').textContent = k.boss;
-    const total = k.grunt + k.weaver + k.kamikaze + k.tank + k.sniper + k.boss;
+    const total = k.grunt + k.weaver + k.kamikaze + k.tank + k.sniper + k.eliteTank + k.boss;
     document.getElementById('stat-total').textContent = total;
     // High score
     const prev = getHighScore();
@@ -1503,20 +2986,89 @@
 
   // ============ RENDER ============
   function draw() {
-    ctx.fillStyle = '#000';
+    // During the sector break, morph from the just-cleared sector's theme to
+    // the incoming sector's theme. Otherwise use the current wave's theme directly.
+    let bg, starBright, starDim, oldNebulae, newNebulae, morphT;
+    if (state === STATE.BREAK && breakState) {
+      morphT = breakMorphProgress();
+      const oldT = breakState.oldTheme;
+      const newT = breakState.newTheme;
+      bg = lerpHexColor(oldT.bg, newT.bg, morphT);
+      starBright = lerpHexColor(oldT.starBright, newT.starBright, morphT);
+      starDim = lerpHexColor(oldT.starDim, newT.starDim, morphT);
+      oldNebulae = oldT.nebulae;
+      newNebulae = newT.nebulae;
+    } else {
+      const theme = sectorThemeForWave(wave);
+      bg = theme.bg;
+      starBright = theme.starBright;
+      starDim = theme.starDim;
+      newNebulae = theme.nebulae; // single set, drawn at full alpha
+      morphT = 1; // for nebula alpha math below
+    }
+
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, VW, VH);
+
+    // Nebula clouds — soft radial gradients. During break, OLD nebulae fade
+    // out while NEW ones fade in; outside break, just draw the current set.
+    if (oldNebulae) {
+      for (const n of oldNebulae) {
+        const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+        const a = n.alpha * (1 - morphT);
+        grad.addColorStop(0, hexAlpha(n.color, a));
+        grad.addColorStop(0.5, hexAlpha(n.color, a * 0.5));
+        grad.addColorStop(1, hexAlpha(n.color, 0));
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, VW, VH);
+      }
+    }
+    // For endless sectors (wave > 100), use animated nebulae that continually
+    // drift in position and cycle through hues. This gives UNKNOWN SPACE an
+    // alive, unmapped feel for the long-tail endurance content.
+    // Timing targets (chosen to be visible within ~10s of play):
+    //   - Position orbit: ~30s per loop (X axis), ~50s (Y axis) for lissajous patterns
+    //   - Radius pulse: ~11s per breathing cycle
+    //   - Hue cycle: 33-56s per full color rotation depending on hueSpeed
+    //   - Alpha pulse: ~15s
+    const currentTheme = state === STATE.PLAY ? sectorThemeForWave(wave) : null;
+    if (state === STATE.PLAY && currentTheme && currentTheme.animatedNebulae && wave > 100) {
+      for (const n of currentTheme.animatedNebulae) {
+        const x = n.cx + Math.sin(time * 0.0035 + n.phaseOffset) * n.drift;
+        const y = n.cy + Math.cos(time * 0.0021 + n.phaseOffset) * n.drift * 0.7;
+        const r = n.baseR + Math.sin(time * 0.0095 + n.phaseOffset) * 40;
+        const hue = (n.hueStart + time * 0.18 * n.hueSpeed) % 360;
+        const alpha = Math.max(0, n.baseAlpha + Math.sin(time * 0.007 + n.phaseOffset) * 0.06);
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0,   'hsla(' + hue + ',60%,32%,' + alpha + ')');
+        grad.addColorStop(0.5, 'hsla(' + hue + ',60%,32%,' + (alpha * 0.5) + ')');
+        grad.addColorStop(1,   'hsla(' + hue + ',60%,32%,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, VW, VH);
+      }
+    } else if (newNebulae) {
+      for (const n of newNebulae) {
+        const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+        const a = n.alpha * morphT;
+        grad.addColorStop(0, hexAlpha(n.color, a));
+        grad.addColorStop(0.5, hexAlpha(n.color, a * 0.5));
+        grad.addColorStop(1, hexAlpha(n.color, 0));
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, VW, VH);
+      }
+    }
 
     ctx.save();
     if (shake > 0.5) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
     for (const s of stars) {
       ctx.globalAlpha = Math.min(1, s.v / 2);
-      ctx.fillStyle = s.v > 2 ? '#fff' : '#88aacc';
+      ctx.fillStyle = s.v > 2 ? starBright : starDim;
       ctx.fillRect(s.x, s.y, s.s, s.s);
     }
     ctx.globalAlpha = 1;
 
-    if (state === STATE.PLAY || state === STATE.OVER || state === STATE.PAUSED) {
+    if (state === STATE.PLAY || state === STATE.OVER || state === STATE.PAUSED || state === STATE.BREAK) {
       drawPlayer();
       for (const w of wingmen) drawWingman(w);
       for (const b of bullets) drawBullet(b);
@@ -1571,19 +3123,123 @@
     }
 
     if (state === STATE.PLAY && bossActive) {
-      const boss = enemies.find(e => e.type === 'boss');
-      if (boss) {
-        ctx.fillStyle = 'rgba(255,0,122,0.2)';
-        ctx.fillRect(20, 90, VW - 40, 6);
-        ctx.fillStyle = '#ff007a';
-        ctx.shadowColor = '#ff007a';
-        ctx.shadowBlur = 8;
-        ctx.fillRect(20, 90, (VW - 40) * (boss.hp / boss.maxHp), 6);
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = '#ff007a';
+      const bosses = enemies.filter(e => e.type === 'boss');
+      if (bosses.length > 0) {
+        const lead = bosses[0];
+        const bossLabels = {
+          cruiser: 'CRUISER',
+          hive: 'HIVE',
+          sentinel: 'SENTINEL',
+          mothership: 'MOTHERSHIP'
+        };
+        const label = bossLabels[lead.bossKind] || 'BOSS';
+        const barColor = lead.color || '#ff007a';
+
+        // Sentinel groups render separate side-by-side HP bars so the player can
+        // see each sentinel's individual health. Other multi-boss situations
+        // (shouldn't happen yet, but defensive) aggregate as before.
+        if (lead.bossKind === 'sentinel' && bosses.length > 1) {
+          const barW = VW - 40;
+          const gap = 4;
+          const segmentW = (barW - gap * (bosses.length - 1)) / bosses.length;
+          for (let i = 0; i < bosses.length; i++) {
+            const b = bosses[i];
+            const xStart = 20 + i * (segmentW + gap);
+            // Background track
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            ctx.fillRect(xStart, 90, segmentW, 6);
+            // Filled portion — each sentinel uses its own color shade
+            const sentColor = b.color || '#a855ff';
+            ctx.fillStyle = sentColor;
+            ctx.shadowColor = sentColor;
+            ctx.shadowBlur = 8;
+            ctx.fillRect(xStart, 90, segmentW * (b.hp / b.maxHp), 6);
+            ctx.shadowBlur = 0;
+          }
+        } else {
+          // Aggregate HP across all bosses in the group (Hive, Cruiser, Mothership)
+          let totalHp = 0, totalMax = 0;
+          for (const b of bosses) { totalHp += b.hp; totalMax += b.maxHp; }
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          ctx.fillRect(20, 90, VW - 40, 6);
+          ctx.fillStyle = barColor;
+          ctx.shadowColor = barColor;
+          ctx.shadowBlur = 8;
+          ctx.fillRect(20, 90, (VW - 40) * (totalHp / totalMax), 6);
+          ctx.shadowBlur = 0;
+        }
+
+        ctx.fillStyle = barColor;
         ctx.font = 'bold 9px Courier New';
         ctx.textAlign = 'center';
-        ctx.fillText('WARNING · BOSS', VW / 2, 86);
+        let bannerText = 'WARNING · ' + label;
+        if (bosses.length > 1) bannerText += ' · ' + bosses.length;
+        // For Hive, flag vulnerability in the banner
+        if (lead.bossKind === 'hive' && lead.vulnerable) bannerText += ' · VULNERABLE';
+        // For Mothership, show shield state
+        if (lead.bossKind === 'mothership') {
+          bannerText += mothershipCoreVulnerable(lead) ? ' · EXPOSED' : ' · SHIELDED';
+        }
+        ctx.fillText(bannerText, VW / 2, 86);
+      }
+    }
+
+    // ============ BREAK SCENE TEXT ============
+    if (state === STATE.BREAK && breakState) {
+      const bs = breakState;
+      ctx.textAlign = 'center';
+      if (bs.phase === 'cleared') {
+        // Fade in then hold
+        const a = Math.min(1, bs.timer / 30);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#00f0ff';
+        ctx.font = 'bold 18px Courier New';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 12;
+        ctx.fillText('SECTOR ' + bs.sectorJustCleared + ' CLEARED', VW / 2, VH / 2 - 30);
+        ctx.shadowBlur = 0;
+        // Sub stats
+        ctx.font = '11px Courier New';
+        ctx.fillStyle = '#fff';
+        ctx.fillText('SCORE ' + score, VW / 2, VH / 2 + 5);
+        if (stats && stats.bulletsFired > 0) {
+          const acc = Math.round((stats.bulletsHit / stats.bulletsFired) * 100);
+          ctx.fillText('ACCURACY ' + acc + '%', VW / 2, VH / 2 + 22);
+        }
+        // Repair message if any wingmen exist
+        if (wingmen.length > 0) {
+          ctx.fillStyle = '#00ff88';
+          ctx.shadowColor = '#00ff88';
+          ctx.shadowBlur = 6;
+          ctx.fillText('FLEET REPAIRED', VW / 2, VH / 2 + 44);
+          ctx.shadowBlur = 0;
+        }
+        ctx.globalAlpha = 1;
+      } else if (bs.phase === 'quiet') {
+        // Stars are warping; tiny prompt at the bottom
+        const a = Math.max(0, 1 - bs.timer / BREAK_QUIET_FRAMES);
+        ctx.globalAlpha = a * 0.6;
+        ctx.fillStyle = '#88aacc';
+        ctx.font = '10px Courier New';
+        ctx.fillText('warp jump...', VW / 2, VH - 60);
+        ctx.globalAlpha = 1;
+      } else if (bs.phase === 'incoming') {
+        const nextSector = bs.sectorJustCleared + 1;
+        const a = Math.min(1, bs.timer / 20);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#ff007a';
+        ctx.font = 'bold 11px Courier New';
+        ctx.shadowColor = '#ff007a';
+        ctx.shadowBlur = 8;
+        ctx.fillText('SECTOR ' + nextSector, VW / 2, VH / 2 - 24);
+        ctx.font = 'bold 20px Courier New';
+        ctx.fillText(sectorNameForNumber(nextSector), VW / 2, VH / 2 + 4);
+        ctx.font = 'bold 10px Courier New';
+        ctx.fillStyle = '#ff5500';
+        ctx.shadowColor = '#ff5500';
+        ctx.fillText('INCOMING...', VW / 2, VH / 2 + 36);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
       }
     }
   }
@@ -1794,6 +3450,47 @@
       ctx.fillRect(e.x - 14, e.y - 22, 28, 3);
       ctx.fillStyle = '#00f0ff';
       ctx.fillRect(e.x - 14, e.y - 22, 28 * hpPct, 3);
+    } else if (e.type === 'eliteTank') {
+      // Larger hex with a gold outer ring, indicating "elite" status
+      const r = 22;
+      // Gold ring (drawn first as a slightly bigger hex outline)
+      ctx.save();
+      ctx.shadowColor = '#ffaa00';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = '#ffaa00';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 3 * i + Math.PI / 2;
+        const x = e.x + Math.cos(a) * (r + 3), y = e.y + Math.sin(a) * (r + 3);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+      // Inner cyan hex body (same color as regular tank)
+      ctx.shadowColor = e.color;
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = e.color;
+      ctx.fillStyle = '#0a2030';
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 3 * i + Math.PI / 2;
+        const x = e.x + Math.cos(a) * r, y = e.y + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Core square
+      ctx.fillStyle = e.color;
+      ctx.fillRect(e.x - 7, e.y - 7, 14, 14);
+      // HP bar (slightly wider than regular tank)
+      const ehpPct = e.hp / e.maxHp;
+      ctx.fillStyle = 'rgba(255,0,0,0.6)';
+      ctx.fillRect(e.x - 18, e.y - 28, 36, 3);
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillRect(e.x - 18, e.y - 28, 36 * ehpPct, 3);
+      ctx.shadowBlur = 0;
     } else if (e.type === 'sniper') {
       ctx.beginPath();
       ctx.moveTo(e.x, e.y + 13);
@@ -1827,30 +3524,346 @@
         ctx.stroke();
       }
     } else if (e.type === 'boss') {
-      ctx.beginPath();
-      ctx.moveTo(e.x - 45, e.y - 20);
-      ctx.lineTo(e.x - 30, e.y - 30);
-      ctx.lineTo(e.x + 30, e.y - 30);
-      ctx.lineTo(e.x + 45, e.y - 20);
-      ctx.lineTo(e.x + 40, e.y + 10);
-      ctx.lineTo(e.x + 25, e.y + 25);
-      ctx.lineTo(e.x - 25, e.y + 25);
-      ctx.lineTo(e.x - 40, e.y + 10);
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = e.phase === 0 ? '#ff007a' : e.phase === 1 ? '#ffe600' : '#a855ff';
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, 10 + Math.sin(time * 0.15) * 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#1a0a1a';
-      ctx.strokeStyle = e.color;
-      ctx.shadowBlur = 6;
-      ctx.fillRect(e.x - 38, e.y - 8, 8, 16); ctx.strokeRect(e.x - 38, e.y - 8, 8, 16);
-      ctx.fillRect(e.x + 30, e.y - 8, 8, 16); ctx.strokeRect(e.x + 30, e.y - 8, 8, 16);
+      if (e.bossKind === 'hive') drawHive(e);
+      else if (e.bossKind === 'sentinel') drawSentinel(e);
+      else if (e.bossKind === 'mothership') drawMothership(e);
+      else drawCruiser(e);
     }
     ctx.shadowBlur = 0;
+  }
+
+  function drawCruiser(e) {
+    ctx.beginPath();
+    ctx.moveTo(e.x - 45, e.y - 20);
+    ctx.lineTo(e.x - 30, e.y - 30);
+    ctx.lineTo(e.x + 30, e.y - 30);
+    ctx.lineTo(e.x + 45, e.y - 20);
+    ctx.lineTo(e.x + 40, e.y + 10);
+    ctx.lineTo(e.x + 25, e.y + 25);
+    ctx.lineTo(e.x - 25, e.y + 25);
+    ctx.lineTo(e.x - 40, e.y + 10);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = e.phase === 0 ? '#ff007a' : e.phase === 1 ? '#ffe600' : '#a855ff';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 10 + Math.sin(time * 0.15) * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1a0a1a';
+    ctx.strokeStyle = e.color;
+    ctx.shadowBlur = 6;
+    ctx.fillRect(e.x - 38, e.y - 8, 8, 16); ctx.strokeRect(e.x - 38, e.y - 8, 8, 16);
+    ctx.fillRect(e.x + 30, e.y - 8, 8, 16); ctx.strokeRect(e.x + 30, e.y - 8, 8, 16);
+  }
+
+  function drawHive(e) {
+    // Octagonal fortress with two prominent vents on the sides
+    ctx.shadowColor = e.color;
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = e.color;
+    ctx.fillStyle = '#2a2a05';
+    ctx.beginPath();
+    // Octagon
+    const w2 = 50, h2 = 40;
+    ctx.moveTo(e.x - w2 * 0.6, e.y - h2);
+    ctx.lineTo(e.x + w2 * 0.6, e.y - h2);
+    ctx.lineTo(e.x + w2, e.y - h2 * 0.3);
+    ctx.lineTo(e.x + w2, e.y + h2 * 0.3);
+    ctx.lineTo(e.x + w2 * 0.6, e.y + h2);
+    ctx.lineTo(e.x - w2 * 0.6, e.y + h2);
+    ctx.lineTo(e.x - w2, e.y + h2 * 0.3);
+    ctx.lineTo(e.x - w2, e.y - h2 * 0.3);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Core — color varies by phase
+    let coreColor = '#ffe600';
+    if (e.phase === 0) coreColor = '#ff007a';      // spawning grunts (magenta accent)
+    else if (e.phase === 1) coreColor = '#ff5500'; // spawning kamikazes (orange)
+    else coreColor = '#00ff88';                    // vulnerable (green = "shoot me")
+    ctx.fillStyle = coreColor;
+    ctx.shadowColor = coreColor;
+    ctx.shadowBlur = e.vulnerable ? 24 : 12;
+    const pulse = e.vulnerable ? 14 + Math.sin(time * 0.3) * 4 : 10 + Math.sin(time * 0.15) * 2;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, pulse, 0, Math.PI * 2);
+    ctx.fill();
+    // Vents — left and right, glow brighter during vulnerable phase
+    ctx.fillStyle = '#1a0a05';
+    ctx.strokeStyle = e.vulnerable ? coreColor : e.color;
+    ctx.shadowBlur = e.vulnerable ? 14 : 6;
+    ctx.fillRect(e.x - w2 - 4, e.y - 10, 8, 20);
+    ctx.strokeRect(e.x - w2 - 4, e.y - 10, 8, 20);
+    ctx.fillRect(e.x + w2 - 4, e.y - 10, 8, 20);
+    ctx.strokeRect(e.x + w2 - 4, e.y - 10, 8, 20);
+    // Vent inner glow during spawn phases
+    if (!e.vulnerable && e.phase <= 1) {
+      ctx.fillStyle = coreColor;
+      ctx.globalAlpha = 0.6 + Math.sin(time * 0.4) * 0.4;
+      ctx.fillRect(e.x - w2 - 2, e.y - 7, 4, 14);
+      ctx.fillRect(e.x + w2 - 2, e.y - 7, 4, 14);
+      ctx.globalAlpha = 1;
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  function drawSentinel(e) {
+    // Vertical "fish" silhouette with two prominent wing-cannons.
+    ctx.shadowColor = e.color;
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = e.color;
+    ctx.fillStyle = '#1a0930';
+    // Body — vertical lens shape
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y - 36);                 // nose
+    ctx.bezierCurveTo(e.x + 18, e.y - 24, e.x + 18, e.y + 16, e.x, e.y + 28); // right side
+    ctx.bezierCurveTo(e.x - 18, e.y + 16, e.x - 18, e.y - 24, e.x, e.y - 36); // left side
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Wing-cannons — two prominent forward-swept wings on each side
+    ctx.fillStyle = '#0a0418';
+    ctx.beginPath();
+    ctx.moveTo(e.x - 12, e.y - 10);
+    ctx.lineTo(e.x - 28, e.y - 4);
+    ctx.lineTo(e.x - 28, e.y + 10);
+    ctx.lineTo(e.x - 10, e.y + 8);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(e.x + 12, e.y - 10);
+    ctx.lineTo(e.x + 28, e.y - 4);
+    ctx.lineTo(e.x + 28, e.y + 10);
+    ctx.lineTo(e.x + 10, e.y + 8);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Core eye — pulses; color flashes red during dash charge
+    let coreColor = '#a855ff';
+    if (e.dashCharging) {
+      // Pulsing red warning while charging
+      const t = e.dashChargeT / SENTINEL_DASH_CHARGE;
+      coreColor = (Math.floor(time / 4) % 2 === 0) ? '#ff3030' : '#ff8800';
+    } else if (e.dashing) {
+      coreColor = '#ffe600';
+    }
+    ctx.fillStyle = coreColor;
+    ctx.shadowColor = coreColor;
+    ctx.shadowBlur = e.dashCharging ? 18 : 10;
+    ctx.beginPath();
+    ctx.ellipse(e.x, e.y - 6, 4, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Sweep indicator: faint line showing current sweep direction during phase 0
+    if (e.phase === 0 && e.sweepAngle !== undefined) {
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(168, 85, 255, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y + 10);
+      const lx = e.x + Math.cos(e.sweepAngle) * 60;
+      const ly = e.y + 10 + Math.sin(e.sweepAngle) * 60;
+      ctx.lineTo(lx, ly);
+      ctx.stroke();
+    }
+    // Dash-charge warning: a bright targeting line down to the player's locked x
+    if (e.dashCharging) {
+      ctx.strokeStyle = 'rgba(255, 48, 48, ' + (0.3 + 0.3 * Math.sin(time * 0.4)) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y + 20);
+      ctx.lineTo(player.x, player.y);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  function drawMothership(e) {
+    // ============ LASER BEAM (drawn behind body so it appears to emerge) ============
+    if (e.phase === 1) {
+      if (e.laserCharging) {
+        // Charge warning: pulsing red vertical targeting line to bottom of screen
+        const chargeFrac = e.laserT / MS_LASER_CHARGE;
+        const alpha = 0.3 + 0.5 * Math.sin(time * 0.5);
+        ctx.strokeStyle = 'rgba(255, 48, 48, ' + alpha + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(e.laserX, e.y + 35);
+        ctx.lineTo(e.laserX, VH);
+        ctx.stroke();
+        // Charge buildup orb at the laser emitter
+        ctx.fillStyle = '#ff3030';
+        ctx.shadowColor = '#ff3030';
+        ctx.shadowBlur = 12 + chargeFrac * 16;
+        ctx.beginPath();
+        ctx.arc(e.laserX, e.y + 35, 4 + chargeFrac * 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 1;
+      } else if (e.laserActive) {
+        // Live beam: thick red bar from emitter to bottom of screen
+        const halfW = MS_LASER_WIDTH / 2;
+        // Outer glow
+        ctx.fillStyle = 'rgba(255, 80, 80, 0.4)';
+        ctx.fillRect(e.laserX - halfW - 4, e.y + 35, halfW * 2 + 8, VH);
+        // Inner beam
+        ctx.fillStyle = '#ff3030';
+        ctx.shadowColor = '#ff3030';
+        ctx.shadowBlur = 18;
+        ctx.fillRect(e.laserX - halfW, e.y + 35, halfW * 2, VH);
+        // Hot core
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(e.laserX - halfW / 3, e.y + 35, halfW * 2 / 3, VH);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // ============ BODY ============
+    ctx.shadowColor = e.color;
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = e.color;
+    ctx.fillStyle = '#1a0a0a';
+    // Main hull — wide trapezoidal shape
+    ctx.beginPath();
+    ctx.moveTo(e.x - 70, e.y - 30);  // top-left
+    ctx.lineTo(e.x - 60, e.y - 40);  // top-left peak
+    ctx.lineTo(e.x + 60, e.y - 40);  // top-right peak
+    ctx.lineTo(e.x + 70, e.y - 30);  // top-right
+    ctx.lineTo(e.x + 65, e.y + 20);  // right shoulder
+    ctx.lineTo(e.x + 40, e.y + 35);  // right underside
+    ctx.lineTo(e.x - 40, e.y + 35);  // left underside
+    ctx.lineTo(e.x - 65, e.y + 20);  // left shoulder
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Antenna stripes (mechanical detail) — three vertical lines on top
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(e.x + i * 18, e.y - 40);
+      ctx.lineTo(e.x + i * 18, e.y - 48);
+      ctx.stroke();
+    }
+    // ============ CORE ============
+    // Vivid cyan eye when exposed; dim/dark when shielded.
+    const vulnerable = mothershipCoreVulnerable(e);
+    if (vulnerable) {
+      // EXPOSED: vivid pulsing cyan with strong glow
+      const coreColor = '#00f0ff';
+      ctx.fillStyle = coreColor;
+      ctx.shadowColor = coreColor;
+      ctx.shadowBlur = 22;
+      const corePulse = 13 + Math.sin(time * 0.25) * 4;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y - 8, corePulse, 0, Math.PI * 2);
+      ctx.fill();
+      // Outer pulsing ring as a "now vulnerable" cue
+      ctx.strokeStyle = 'rgba(0, 240, 255, ' + (0.4 + 0.4 * Math.sin(time * 0.3)) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y - 8, corePulse + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    } else {
+      // SHIELDED: dim, dark grey-blue, no pulse, no glow.
+      ctx.fillStyle = '#2a3540';
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y - 8, 12, 0, Math.PI * 2);
+      ctx.fill();
+      // Subtle inner stripe to show it's "powered down"
+      ctx.strokeStyle = 'rgba(100, 130, 160, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y - 8, 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // ============ TURRETS ============
+    for (const t of e.turrets) {
+      const tx = e.x + t.dx;
+      const ty = e.y + t.dy;
+      if (t.alive) {
+        ctx.fillStyle = '#003344';
+        ctx.strokeStyle = '#00f0ff';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 6;
+        ctx.fillRect(tx - 9, ty - 9, 18, 18);
+        ctx.strokeRect(tx - 9, ty - 9, 18, 18);
+        // Inner barrel pointing down
+        ctx.fillStyle = '#00f0ff';
+        ctx.fillRect(tx - 2, ty + 6, 4, 6);
+        // HP bar above the turret
+        if (t.hp < t.maxHp) {
+          const hpFrac = t.hp / t.maxHp;
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = 'rgba(255,0,0,0.5)';
+          ctx.fillRect(tx - 9, ty - 14, 18, 2);
+          ctx.fillStyle = '#00f0ff';
+          ctx.fillRect(tx - 9, ty - 14, 18 * hpFrac, 2);
+        }
+      } else {
+        // Destroyed: dark hole with smoldering edge
+        ctx.fillStyle = '#1a0808';
+        ctx.strokeStyle = 'rgba(120,40,40,0.6)';
+        ctx.shadowBlur = 0;
+        ctx.fillRect(tx - 9, ty - 9, 18, 18);
+        ctx.strokeRect(tx - 9, ty - 9, 18, 18);
+        // Tiny smoke flicker
+        if (Math.random() < 0.15) {
+          ctx.fillStyle = 'rgba(80,40,40,0.4)';
+          ctx.fillRect(tx - 5 + Math.random() * 10, ty - 5 + Math.random() * 10, 2, 2);
+        }
+      }
+    }
+    ctx.shadowBlur = 0;
+
+    // ============ TEMP DEBUG OVERLAY ============
+    // Shows the actual collision boxes (22x22) for each turret, plus their HP values
+    // and which one was last hit. Remove block once bug is identified.
+    if (DEBUG_MOTHERSHIP_TURRETS) {
+      ctx.save();
+      ctx.shadowBlur = 0;
+      // Outline the boss body hitbox in white (rectangular collision box)
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(e.x - e.w / 2, e.y - e.h / 2, e.w, e.h);
+      ctx.setLineDash([]);
+      // Outline each turret's hit zone (asymmetric column extending down to body bottom)
+      const bodyBottom = e.y + e.h / 2;
+      for (let i = 0; i < e.turrets.length; i++) {
+        const t = e.turrets[i];
+        const tx = e.x + t.dx;
+        const ty = e.y + t.dy;
+        // Hit zone: x in [tx-11, tx+11], y in [ty-11, bodyBottom]
+        const zoneTop = ty - 11;
+        const zoneHeight = bodyBottom - zoneTop;
+        ctx.strokeStyle = t.alive ? '#ff0000' : 'rgba(120,40,40,0.4)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tx - 11, zoneTop, 22, zoneHeight);
+        // Label: T0..T3 with HP
+        ctx.fillStyle = '#ffff00';
+        ctx.font = 'bold 9px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('T' + i, tx, zoneTop - 4);
+        ctx.fillText(t.alive ? (t.hp + '/' + t.maxHp) : 'DEAD', tx, bodyBottom + 10);
+        // Flash recently-hit turret
+        if (i === dbgLastTurretHit && dbgLastTurretHitT > 0) {
+          ctx.strokeStyle = '#ffff00';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(tx - 13, zoneTop - 2, 26, zoneHeight + 4);
+        }
+      }
+      // Top-right debug summary
+      ctx.fillStyle = '#ffff00';
+      ctx.font = 'bold 9px Courier New';
+      ctx.textAlign = 'right';
+      const summary = 'TURRET HP: ' + e.turrets.map(t => t.alive ? t.hp : 'X').join(' ');
+      ctx.fillText(summary, VW - 4, VH - 36);
+      ctx.fillText('LAST HIT: T' + (dbgLastTurretHit >= 0 ? dbgLastTurretHit : '-'), VW - 4, VH - 24);
+      ctx.fillText('BOSS X: ' + Math.round(e.x), VW - 4, VH - 12);
+      ctx.restore();
+      // Tick down the flash counter
+      if (dbgLastTurretHitT > 0) dbgLastTurretHitT--;
+    }
   }
 
   function drawPowerup(p) {
@@ -1874,8 +3887,30 @@
     ctx.shadowBlur = 0;
   }
 
-  function loop() {
-    update();
+  // Fixed-timestep loop so the game logic runs at a consistent 60 ticks/second
+  // regardless of display refresh rate. Drawing happens once per rAF callback
+  // (smooth at the display's native refresh), but update() is called only as
+  // many times as needed to keep logical time at 60Hz.
+  //
+  // Without this, high-refresh-rate displays (90/120/144Hz, common on modern
+  // phones) would run the game at 1.5×-2.4× intended speed because every
+  // animation frame ticks the game state forward by exactly one "frame."
+  const LOGIC_HZ = 60;
+  const LOGIC_STEP_MS = 1000 / LOGIC_HZ; // ~16.67 ms per logical frame
+  const MAX_ACCUMULATOR_MS = 100;         // cap so backgrounded tabs don't spike on resume
+  let loopAccumulator = 0;
+  let loopLastTime = 0;
+
+  function loop(now) {
+    if (loopLastTime === 0) loopLastTime = now;
+    const elapsed = now - loopLastTime;
+    loopLastTime = now;
+    loopAccumulator = Math.min(MAX_ACCUMULATOR_MS, loopAccumulator + elapsed);
+    // Run as many fixed-step updates as needed to catch up
+    while (loopAccumulator >= LOGIC_STEP_MS) {
+      update();
+      loopAccumulator -= LOGIC_STEP_MS;
+    }
     draw();
     requestAnimationFrame(loop);
   }
@@ -1913,7 +3948,7 @@
     if (state !== STATE.PAUSED) return;
     state = STATE.PLAY;
     document.getElementById('pause-screen').classList.add('hidden');
-    if (bgmOn) startBgm(bossActive ? 'boss' : 'combat');
+    if (bgmOn) startBgm(currentBgmMode());
   }
 
   // Auto-pause when user switches tabs / answers a call / locks phone
@@ -1938,7 +3973,7 @@
     if (e) { e.preventDefault(); e.stopPropagation(); }
     bgmOn = !bgmOn;
     bgmBtn.classList.toggle('off', !bgmOn);
-    if (bgmOn && state === STATE.PLAY) startBgm(bossActive ? 'boss' : 'combat');
+    if (bgmOn && state === STATE.PLAY) startBgm(currentBgmMode());
     else if (!bgmOn) stopBgm();
   }
   function toggleHap(e) {
@@ -1977,7 +4012,7 @@
   player = { x: VW/2, y: VH-100, w:28, h:32, speed:4, cooldown:0, invuln:0, thruster:0.5 };
   bullets = []; enemies = []; eBullets = []; particles = []; powerups = []; floatTexts = []; burstWaves = [];
   wingmen = [];
-  loop();
+  requestAnimationFrame(loop);
 })();
 </script>
 <script>
